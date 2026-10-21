@@ -1,0 +1,425 @@
+import { useMemo, useState } from 'react';
+import {
+  CalendarCheck, CalendarPlus, Check, ChevronDown, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
+} from 'lucide-react';
+import { SESSION_FORMATS, VOTE } from '../constants';
+import {
+  closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, reopenPoll, updatePoll, updateSession, votePoll,
+} from '../data';
+import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
+import { Avatar, ConfirmButton, Empty, Modal } from './ui';
+
+const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
+
+// Nombre de personnes dispo d'après le planning pour une date/heure
+export function forecast(people, date, s, e) {
+  const wd = parseIso(date).getDay();
+  const full = people.filter((p) => (p.slots || []).some((x) => x.d === wd && x.s <= s && x.e >= e));
+  const part = people.filter((p) => !full.includes(p) && (p.slots || []).some((x) => x.d === wd && x.s < e && x.e > s));
+  return { full, part };
+}
+
+function scoreOf(poll, optId) {
+  let yes = 0, maybe = 0, no = 0;
+  for (const v of Object.values(poll.votes || {})) {
+    if (v?.[optId] === 'yes') yes++; else if (v?.[optId] === 'maybe') maybe++; else if (v?.[optId] === 'no') no++;
+  }
+  return { yes, maybe, no, score: yes * 2 + maybe };
+}
+
+// =================== Vue principale ===================
+export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm }) {
+  const [showPast, setShowPast] = useState(false);
+  const today = isoDate(new Date());
+  const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
+  const past = sessions.filter((s) => isPast(s.date, s.e)).reverse();
+  const open = polls.filter((p) => p.status !== 'closed');
+  const closed = polls.filter((p) => p.status === 'closed');
+
+  return (
+    <div className="polls">
+      <div className="pv-actions">
+        <button className="btn primary" onClick={() => openPollForm(null)}><Vote size={17} /> Nouveau sondage</button>
+        <button className="btn" onClick={() => openSessionForm(null)}><CalendarPlus size={17} /> Planifier une séance</button>
+      </div>
+
+      <h3 className="sec-title"><CalendarCheck size={18} /> Séances à venir</h3>
+      {upcoming.length === 0 ? <p className="muted">Aucune séance prévue. Lance un sondage ou planifie directement.</p> : (
+        <div className="sess-list">
+          {upcoming.map((s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} isToday={s.date === today} />)}
+        </div>
+      )}
+
+      <h3 className="sec-title"><Vote size={18} /> Sondages en cours</h3>
+      {open.length === 0 ? <Empty icon={Vote} title="Aucun sondage en cours">Propose quelques dates et laisse chacun voter.</Empty>
+        : open.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} onEdit={() => openPollForm(p)} />)}
+
+      {closed.length > 0 && (
+        <>
+          <h3 className="sec-title"><Lock size={18} /> Sondages terminés</h3>
+          {closed.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} onEdit={() => openPollForm(p)}
+            onSession={() => { const s = sessions.find((x) => x.id === p.sessionId); if (s) onSession(s); }} />)}
+        </>
+      )}
+
+      {past.length > 0 && (
+        <>
+          <button className="link sec-title" onClick={() => setShowPast(!showPast)}>
+            <ChevronDown size={16} className={showPast ? 'rot' : ''} /> Séances passées ({past.length})
+          </button>
+          {showPast && <div className="sess-list past">{past.map((s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} />)}</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SessionRow({ s, people, me, onClick, isToday }) {
+  const att = (s.attendees || []).map((id) => people.find((p) => p.id === id)).filter(Boolean);
+  const inIt = me && (s.attendees || []).includes(me.id);
+  return (
+    <button className={'sess-row' + (inIt ? ' in' : '') + (isToday ? ' today' : '')} onClick={onClick}>
+      <div className="sr-date">
+        <b>{parseIso(s.date).getDate()}</b>
+        <span>{parseIso(s.date).toLocaleDateString('fr-FR', { month: 'short' })}</span>
+      </div>
+      <div className="grow">
+        <strong>{s.title}</strong>
+        <div className="muted tiny">{fmtDay(s.date, { weekday: 'long' })} · {fmt(s.s)}–{fmt(s.e)} · {SESSION_FORMATS[s.format] || s.format}{s.place ? ` · ${s.place}` : ''}</div>
+        <div className="av-stack">{att.slice(0, 8).map((p) => <Avatar key={p.id} p={p} size={22} />)}{att.length > 8 && <span className="more">+{att.length - 8}</span>}</div>
+      </div>
+      {inIt && <span className="pill ok"><Check size={13} /> J'y vais</span>}
+    </button>
+  );
+}
+
+// =================== Carte de sondage ===================
+function PollCard({ poll, people, me, isAdmin, onEdit, onSession }) {
+  const closed = poll.status === 'closed';
+  const myVotes = (me && poll.votes?.[me.id]) || {};
+  const [draft, setDraft] = useState(myVotes);
+  const [busy, setBusy] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const canManage = isAdmin || (me && poll.createdBy === me.id);
+  const voters = Object.keys(poll.votes || {}).map((id) => people.find((p) => p.id === id)).filter(Boolean);
+  const scores = Object.fromEntries(poll.options.map((o) => [o.id, scoreOf(poll, o.id)]));
+  const best = Math.max(0, ...Object.values(scores).map((s) => s.score));
+  const norm = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).filter(([, v]) => v).sort()));
+  const dirty = norm(draft) !== norm(myVotes);
+  const deadlinePassed = poll.deadline && isPast(poll.deadline);
+
+  const save = async () => {
+    setBusy(true);
+    const clean = Object.fromEntries(Object.entries(draft).filter(([, v]) => v));
+    await votePoll(poll, me, clean);
+    setDraft(clean);
+    setBusy(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className={'card poll' + (closed ? ' closed' : '')}>
+      <div className="poll-head">
+        <div className="grow">
+          <h4>{poll.title}</h4>
+          <div className="muted tiny">
+            par {poll.createdByName} · {timeAgo(poll.createdAt)} · {voters.length} vote{voters.length > 1 ? 's' : ''}
+            {poll.deadline && <> · réponse avant le {fmtDayShort(poll.deadline)}{deadlinePassed && ' (dépassé)'}</>}
+          </div>
+          {poll.description && <p className="poll-desc">{poll.description}</p>}
+          <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}</div>
+        </div>
+        {canManage && (
+          <div className="poll-tools">
+            {!closed && <button className="icon-btn" onClick={onEdit} title="Modifier"><Pencil size={17} /></button>}
+            <ConfirmButton className="icon-btn danger" confirmText="Sûr ?" onConfirm={() => deletePoll(poll, actorName(me))}><Trash2 size={17} /></ConfirmButton>
+          </div>
+        )}
+      </div>
+
+      <div className="opts">
+        {poll.options.map((o) => {
+          const sc = scores[o.id];
+          const fc = forecast(people, o.date, o.s, o.e);
+          const isFinal = closed && poll.finalOptionId === o.id;
+          const isBest = !closed && sc.score > 0 && sc.score === best;
+          const who = (k) => voters.filter((p) => poll.votes[p.id]?.[o.id] === k);
+          return (
+            <div key={o.id} className={'opt' + (isFinal ? ' final' : '') + (isBest ? ' best' : '') + (closed && !isFinal ? ' faded' : '')}>
+              <div className="opt-when">
+                {(isFinal || isBest) && <Trophy size={15} className="trophy" />}
+                <b>{fmtDay(o.date, { weekday: 'short', day: 'numeric', month: 'short' })}</b>
+                <span>{fmt(o.s)}–{fmt(o.e)}</span>
+                <span className="fc" title={`D'après le planning : ${fc.full.map((p) => p.prenom).join(', ') || 'personne'}`}>
+                  <Clock size={12} /> {fc.full.length} dispo{fc.full.length > 1 ? 's' : ''} (planning)
+                </span>
+              </div>
+              <div className="opt-count">
+                <span className="vc yes">{sc.yes} ✓</span>
+                <span className="vc maybe">{sc.maybe} ~</span>
+                <span className="vc no">{sc.no} ✕</span>
+              </div>
+              <div className="opt-who">
+                {['yes', 'maybe'].map((k) => who(k).map((p) => (
+                  <span key={k + p.id} className={'vote-av ' + k} title={`${p.prenom} : ${VOTE[k].label}`}><Avatar p={p} size={22} /></span>
+                )))}
+              </div>
+              {!closed && me && me.id !== 'admin' && (
+                <div className="vote-btns">
+                  {Object.entries(VOTE).map(([k, v]) => (
+                    <button key={k} className={'vb ' + k + (draft[o.id] === k ? ' on' : '')}
+                      onClick={() => setDraft({ ...draft, [o.id]: draft[o.id] === k ? undefined : k })}>{v.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="poll-foot">
+        {!closed && me && me.id !== 'admin' && (
+          <button className="btn primary" disabled={!dirty || busy} onClick={save}>
+            {busy ? 'Envoi…' : saved ? <><Check size={16} /> Vote enregistré</> : Object.keys(myVotes).length ? 'Mettre à jour mon vote' : 'Envoyer mon vote'}
+          </button>
+        )}
+        <span className="grow" />
+        {!closed && canManage && <button className="btn" onClick={() => setClosing(true)}><Lock size={16} /> Clôturer et choisir la date</button>}
+        {closed && <button className="btn small" onClick={onSession}><CalendarCheck size={15} /> Voir la séance</button>}
+        {closed && canManage && <ConfirmButton className="btn small ghost" confirmText="Rouvrir (supprime la séance) ?" onConfirm={() => reopenPoll(poll, actorName(me))}><RotateCcw size={15} /> Rouvrir</ConfirmButton>}
+      </div>
+
+      {closing && <ClosePollModal poll={poll} scores={scores} me={me} onClose={() => setClosing(false)} />}
+    </div>
+  );
+}
+
+function ClosePollModal({ poll, scores, me, onClose }) {
+  const sorted = [...poll.options].sort((a, b) => scores[b.id].score - scores[a.id].score);
+  const [optId, setOptId] = useState(sorted[0]?.id);
+  const [format, setFormat] = useState(poll.format || 'hybride');
+  const [place, setPlace] = useState(poll.place || '');
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    await closePoll(poll, poll.options.find((o) => o.id === optId), { format, place }, actorName(me));
+    setBusy(false); onClose();
+  };
+  return (
+    <Modal title="Clôturer le sondage" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy || !optId} onClick={go}><CalendarCheck size={16} /> Ajouter au planning</button></>}>
+      <p className="muted">Choisis la date retenue. Elle devient une séance dans le planning, avec les « oui » et « si besoin » déjà inscrits.</p>
+      <div className="radio-list">
+        {sorted.map((o) => {
+          const sc = scores[o.id];
+          return (
+            <label key={o.id} className={'radio' + (optId === o.id ? ' on' : '')}>
+              <input type="radio" checked={optId === o.id} onChange={() => setOptId(o.id)} />
+              <span className="grow"><b>{fmtDay(o.date)}</b> · {fmt(o.s)}–{fmt(o.e)}</span>
+              <span className="vc yes">{sc.yes} ✓</span><span className="vc maybe">{sc.maybe} ~</span>
+            </label>
+          );
+        })}
+      </div>
+      <div className="grid2">
+        <label className="field"><span>Format</span>
+          <select value={format} onChange={(e) => setFormat(e.target.value)}>
+            {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="BU, chez Lucas, lien Meet…" /></label>
+      </div>
+    </Modal>
+  );
+}
+
+// =================== Formulaire de sondage ===================
+export function PollForm({ initial, prefill, people, me, onClose }) {
+  const isEdit = !!initial?.id;
+  const [title, setTitle] = useState(initial?.title || 'Séance de révision');
+  const [description, setDescription] = useState(initial?.description || '');
+  const [format, setFormat] = useState(initial?.format || 'hybride');
+  const [place, setPlace] = useState(initial?.place || '');
+  const [deadline, setDeadline] = useState(initial?.deadline || '');
+  const [options, setOptions] = useState(() => initial?.options?.map((o) => ({ ...o, sh: toHHMM(o.s), eh: toHHMM(o.e) }))
+    || prefill || [{ id: uid(), date: isoDate(new Date(Date.now() + 86400000)), sh: '14:00', eh: '17:00' }]);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const setOpt = (i, k, v) => setOptions((o) => o.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const add = () => {
+    const last = options[options.length - 1];
+    const next = last ? isoDate(new Date(parseIso(last.date).getTime() + 86400000)) : isoDate(new Date());
+    setOptions([...options, { id: uid(), date: next, sh: last?.sh || '14:00', eh: last?.eh || '17:00' }]);
+  };
+
+  const save = async () => {
+    setErr('');
+    if (!title.trim()) return setErr('Donne un titre.');
+    const opts = [];
+    for (const o of options) {
+      const s = toMin(o.sh); let e = toMin(o.eh);
+      if (!o.date || s === null || e === null) return setErr('Une date ou un horaire est incomplet.');
+      if (e === 0 || e === 1439) e = 1440;
+      if (e <= s) return setErr(`Le ${fmtDayShort(o.date)} : la fin doit être après le début.`);
+      opts.push({ id: o.id, date: o.date, s, e });
+    }
+    if (opts.length < 1) return setErr('Ajoute au moins une date.');
+    opts.sort((a, b) => (a.date + a.s).localeCompare(b.date + b.s));
+    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, options: opts };
+    setBusy(true);
+    try {
+      if (isEdit) await updatePoll(initial.id, data, actorName(me), data.title);
+      else await createPoll(data, me);
+      onClose();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+
+  return (
+    <Modal wide title={isEdit ? 'Modifier le sondage' : 'Nouveau sondage'} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Publier le sondage'}</button></>}>
+      <label className="field"><span>Titre</span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} /></label>
+      <label className="field"><span>Description (optionnel)</span><input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={200} placeholder="Ex : révisions partiel bio cell" /></label>
+      <div className="grid3">
+        <label className="field"><span>Format</span>
+          <select value={format} onChange={(e) => setFormat(e.target.value)}>
+            {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Lieu (optionnel)</span><input value={place} onChange={(e) => setPlace(e.target.value)} /></label>
+        <label className="field"><span>Répondre avant le</span><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
+      </div>
+
+      <h3 className="fsub">Dates proposées</h3>
+      <div className="opt-edit">
+        {options.map((o, i) => {
+          const s = toMin(o.sh), e = toMin(o.eh);
+          const fc = o.date && s !== null && e !== null ? forecast(people, o.date, s, e) : null;
+          return (
+            <div key={o.id} className="oe-row">
+              <input type="date" value={o.date} onChange={(ev) => setOpt(i, 'date', ev.target.value)} />
+              <input type="time" step={900} value={o.sh} onChange={(ev) => setOpt(i, 'sh', ev.target.value)} />
+              <span>→</span>
+              <input type="time" step={900} value={o.eh} onChange={(ev) => setOpt(i, 'eh', ev.target.value)} />
+              {fc && <span className="fc" title={fc.full.map((p) => p.prenom).join(', ')}><Users size={13} /> {fc.full.length}{fc.part.length ? ` (+${fc.part.length})` : ''}</span>}
+              <button className="icon-btn" onClick={() => setOptions(options.filter((_, j) => j !== i))} disabled={options.length < 2}><Trash2 size={16} /></button>
+            </div>
+          );
+        })}
+      </div>
+      <button className="btn small" onClick={add}><Plus size={15} /> Ajouter une date</button>
+      <p className="muted tiny">Le petit chiffre = nombre de personnes dispo sur tout le créneau d'après le planning (+ partiellement).</p>
+      {initial?.votes && Object.keys(initial.votes).length > 0 && <p className="alert warn tiny">Des votes existent déjà : si tu supprimes une date, ses votes disparaissent.</p>}
+      {err && <p className="err">{err}</p>}
+    </Modal>
+  );
+}
+
+// =================== Séances ===================
+export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
+  const att = (s.attendees || []).map((id) => people.find((p) => p.id === id)).filter(Boolean);
+  const inIt = me && (s.attendees || []).includes(me.id);
+  const canManage = isAdmin || (me && s.createdBy === me.id);
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => { setBusy(true); await joinSession(s, me, !inIt); setBusy(false); };
+  const ics = () => {
+    const d = s.date.replace(/-/g, '');
+    const t = (m) => `${String(Math.floor(Math.min(m, 1439) / 60)).padStart(2, '0')}${String(Math.min(m, 1439) % 60).padStart(2, '0')}00`;
+    const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//groupes-etude//FR', 'BEGIN:VEVENT', `UID:${s.id}@groupes-etude`,
+      `DTSTART:${d}T${t(s.s)}`, `DTEND:${d}T${t(s.e)}`, `SUMMARY:${s.title}`, `LOCATION:${s.place || ''}`,
+      `DESCRIPTION:${(s.note || '').replace(/\n/g, ' ')}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([body], { type: 'text/calendar' }));
+    a.download = `${s.title}.ics`; a.click();
+  };
+  return (
+    <Modal title={s.title} onClose={onClose}
+      footer={<>
+        {canManage && <ConfirmButton confirmText="Supprimer la séance ?" onConfirm={async () => { await deleteSession(s, actorName(me)); onClose(); }}><Trash2 size={16} /></ConfirmButton>}
+        {canManage && <button className="btn ghost" onClick={onEdit}><Pencil size={16} /> Modifier</button>}
+        <span className="grow" />
+        <button className="btn ghost" onClick={ics}><CalendarPlus size={16} /> Agenda</button>
+        {me && me.id !== 'admin' && <button className={'btn ' + (inIt ? '' : 'primary')} disabled={busy} onClick={toggle}>{inIt ? 'Je ne viens plus' : <><Check size={16} /> J'y vais</>}</button>}
+      </>}>
+      <div className="sess-info">
+        <p><CalendarCheck size={16} /> <b>{fmtDay(s.date)}</b> · {fmt(s.s)} – {fmt(s.e)}</p>
+        <p><Users size={16} /> {SESSION_FORMATS[s.format] || s.format}</p>
+        {s.place && <p><MapPin size={16} /> {/^https?:\/\//.test(s.place) ? <a href={s.place} target="_blank" rel="noreferrer">{s.place}</a> : s.place}</p>}
+        {s.note && <p className="muted">{s.note}</p>}
+        <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
+      </div>
+      <h3 className="fsub">{att.length} participant{att.length > 1 ? 's' : ''}</h3>
+      <div className="who-wrap">{att.map((p) => <span key={p.id} className="who-chip"><Avatar p={p} size={24} />{p.prenom} {p.nom}</span>)}</div>
+    </Modal>
+  );
+}
+
+export function SessionForm({ initial, prefill, people, me, onClose }) {
+  const isEdit = !!initial?.id;
+  const base = initial || prefill || {};
+  const [title, setTitle] = useState(base.title || 'Séance de révision');
+  const [date, setDate] = useState(base.date || isoDate(new Date(Date.now() + 86400000)));
+  const [sh, setSh] = useState(toHHMM(base.s ?? 840));
+  const [eh, setEh] = useState(toHHMM(base.e ?? 1020));
+  const [format, setFormat] = useState(base.format || 'hybride');
+  const [place, setPlace] = useState(base.place || '');
+  const [note, setNote] = useState(base.note || '');
+  const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const s = toMin(sh), e0 = toMin(eh);
+  const fc = useMemo(() => (date && s !== null && e0 !== null ? forecast(people, date, s, e0) : null), [people, date, s, e0]);
+
+  const save = async () => {
+    setErr('');
+    let e = e0;
+    if (e === 0 || e === 1439) e = 1440;
+    if (!title.trim() || !date || s === null || e === null) return setErr('Titre, date et horaires obligatoires.');
+    if (e <= s) return setErr('La fin doit être après le début.');
+    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees };
+    setBusy(true);
+    try {
+      if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
+      else await createSession(data, me);
+      onClose();
+    } catch (er) { setErr(er.message); }
+    setBusy(false);
+  };
+
+  return (
+    <Modal wide title={isEdit ? 'Modifier la séance' : 'Planifier une séance'} onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Ajouter au planning'}</button></>}>
+      <label className="field"><span>Titre</span><input value={title} onChange={(ev) => setTitle(ev.target.value)} maxLength={60} /></label>
+      <div className="grid3">
+        <label className="field"><span>Date</span><input type="date" value={date} onChange={(ev) => setDate(ev.target.value)} /></label>
+        <label className="field"><span>Début</span><input type="time" step={900} value={sh} onChange={(ev) => setSh(ev.target.value)} /></label>
+        <label className="field"><span>Fin</span><input type="time" step={900} value={eh} onChange={(ev) => setEh(ev.target.value)} /></label>
+      </div>
+      <div className="grid2">
+        <label className="field"><span>Format</span>
+          <select value={format} onChange={(ev) => setFormat(ev.target.value)}>
+            {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>
+      </div>
+      <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
+      <h3 className="fsub">Participants</h3>
+      {fc && <p className="muted tiny">D'après le planning : {fc.full.length} dispo{fc.full.length > 1 ? 's' : ''} sur tout le créneau{fc.part.length ? `, ${fc.part.length} en partie` : ''}. Ils sont surlignés.</p>}
+      <div className="who-wrap">
+        {people.map((p) => {
+          const on = attendees.includes(p.id);
+          const dispo = fc?.full.includes(p) ? 'full' : fc?.part.includes(p) ? 'part' : '';
+          return (
+            <button key={p.id} className={'who-chip sel' + (on ? ' on' : '') + (dispo ? ` ${dispo}` : '')}
+              onClick={() => setAttendees(on ? attendees.filter((x) => x !== p.id) : [...attendees, p.id])}>
+              <Avatar p={p} size={22} />{p.prenom} {p.nom?.[0]}.
+            </button>
+          );
+        })}
+      </div>
+      {err && <p className="err">{err}</p>}
+    </Modal>
+  );
+}

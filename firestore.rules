@@ -1,0 +1,11 @@
+rules_version = '2';
+// Règles volontairement ouvertes : le site est partagé uniquement entre nous.
+// L'accès est filtré dans l'appli par les codes d'invitation et le PIN admin.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /participants/{id} { allow read, write: if true; }
+    match /invites/{code}    { allow read, write: if true; }
+    match /logs/{id}         { allow read, write: if true; }
+    match /config/{id}       { allow read, write: if true; }
+  }
+}

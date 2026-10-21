@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Copy, Download, Pencil, Plus, Power, QrCode, RotateCcw, Trash2 } from 'lucide-react';
+import { Copy, Download, Pencil, Plus, Power, QrCode, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { deleteInvite, inviteStatus, resetInviteUses, saveInvite, setInviteActive } from '../data';
 import { fmtDate, isoDate, randomCode, timeAgo, toDate } from '../utils';
 import { Avatar, ConfirmButton, Empty, Modal, Toast } from '../components/ui';
@@ -12,6 +12,13 @@ export default function AdminInvites({ invites, people }) {
   const [qr, setQr] = useState(null);
   const [toast, setToast] = useState('');
 
+  const quickOpen = async () => {
+    let c = randomCode(6);
+    while (invites.some((i) => i.code === c)) c = randomCode(6);
+    await saveInvite(c, { label: 'Ouvert à tous', expiresAt: null, maxUses: 0, active: true }, true);
+    setQr({ code: c });
+  };
+
   const copy = async (code) => {
     try { await navigator.clipboard.writeText(linkFor(code)); setToast('Lien copié !'); } catch { setToast(linkFor(code)); }
   };
@@ -19,8 +26,9 @@ export default function AdminInvites({ invites, people }) {
   return (
     <div>
       <div className="toolbar">
-        <p className="muted grow">Chaque code donne accès au site. Partage-le par lien ou QR code. Tu peux limiter sa durée et son nombre d'utilisations (1 utilisation = 1 appareil).</p>
-        <button className="btn primary" onClick={() => setForm('new')}><Plus size={16} /> Nouveau code</button>
+        <p className="muted grow">Un même code peut servir à autant de personnes que tu veux (1 utilisation = 1 appareil). Partage-le par lien ou QR code.</p>
+        <button className="btn primary" onClick={quickOpen}><Zap size={16} /> Code ouvert à tous</button>
+        <button className="btn" onClick={() => setForm('new')}><Plus size={16} /> Code personnalisé</button>
       </div>
       {invites.length === 0 ? <div className="card"><Empty icon={QrCode} title="Aucun code pour l'instant">Crée un premier code pour inviter le groupe.</Empty></div> : (
         <div className="inv-grid">
@@ -62,7 +70,7 @@ export default function AdminInvites({ invites, people }) {
           })}
         </div>
       )}
-      {form && <InviteForm inv={form === 'new' ? null : form} onClose={() => setForm(null)} />}
+      {form && <InviteForm inv={form === 'new' ? null : form} people={people} onClose={() => setForm(null)} />}
       {qr && <QrModal inv={qr} onClose={() => setQr(null)} onCopy={() => copy(qr.code)} />}
       <Toast text={toast} onDone={() => setToast('')} />
     </div>
@@ -74,11 +82,11 @@ const DURATIONS = [
   { v: '7', label: '1 semaine' }, { v: '30', label: '1 mois' }, { v: 'custom', label: 'Date précise' },
 ];
 
-function InviteForm({ inv, onClose }) {
+function InviteForm({ inv, people, onClose }) {
   const isNew = !inv;
   const [code, setCode] = useState(inv?.code || randomCode(6));
   const [label, setLabel] = useState(inv?.label || '');
-  const [dur, setDur] = useState(inv ? (inv.expiresAt ? 'custom' : 'none') : '7');
+  const [dur, setDur] = useState(inv ? (inv.expiresAt ? 'custom' : 'none') : 'none');
   const [custom, setCustom] = useState(inv?.expiresAt ? isoDate(toDate(inv.expiresAt)) : isoDate(new Date(Date.now() + 14 * 86400000)));
   const [maxUses, setMaxUses] = useState(inv?.maxUses ?? 0);
   const [err, setErr] = useState('');
@@ -107,7 +115,7 @@ function InviteForm({ inv, onClose }) {
           <div className="row"><input className="mono" value={code} disabled={!isNew} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={20} />
             {isNew && <button type="button" className="icon-btn" onClick={() => setCode(randomCode(6))} title="Générer"><RotateCcw size={16} /></button>}</div>
         </label>
-        <label className="field"><span>Nom (pour toi)</span><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex : groupe TD B, promo 2026…" maxLength={60} /></label>
+        <label className="field"><span>Nom du code (optionnel)</span><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex : groupe TD B, promo 2026…" maxLength={60} /></label>
       </div>
       <div className="field"><span>Durée de validité</span>
         <div className="chips">{DURATIONS.map((d) => <button key={d.v} type="button" className={'chip' + (dur === d.v ? ' on' : '')} onClick={() => setDur(d.v)}>{d.label}</button>)}</div>

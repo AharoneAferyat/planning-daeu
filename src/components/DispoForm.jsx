@@ -130,9 +130,10 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
           </div>
         )}
 
+
         <label className="field narrow"><span>Code perso (4 chiffres) *</span>
           <PinInput value={pin} onChange={setPin} />
-          <small className="muted">Pour te reconnecter sur un autre appareil. Note-le !</small>
+          <small className="muted">Tu l'inventes. Il te servira à te reconnecter sur un autre appareil : note-le !</small>
         </label>
 
         <div className="field"><span>Ta couleur</span>

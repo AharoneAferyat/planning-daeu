@@ -101,6 +101,7 @@ export function Identity({ settings, people, onLogin, onNew }) {
           </>
         )}
       </div>
+      <a className="admin-link" href="/admin">Admin</a>
       {pick && <PinModal p={pick} onClose={() => setPick(null)} onOk={() => onLogin(pick.id)} />}
     </div>
   );

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  CalendarDays, CalendarHeart, CalendarRange, LogOut, Pencil, Share2, Sparkles, Users, Vote,
+  CalendarDays, CalendarHeart, CalendarRange, KeyRound, LogOut, Pencil, Share2, ShieldCheck, Sparkles, Users, Vote,
 } from 'lucide-react';
 import { isConfigured } from './firebase';
 import { checkInvite, log, usePolls, useParticipants, useSessions, useSettings } from './data';
@@ -75,8 +75,8 @@ function PublicApp() {
 
   // Nettoie ?code= de l'URL une fois entré
   useEffect(() => {
-    if (code && window.location.search.includes('code=')) window.history.replaceState(null, '', window.location.pathname);
-  }, [code]);
+    if ((code || pid) && window.location.search.includes('code=')) window.history.replaceState(null, '', window.location.pathname);
+  }, [code, pid]);
 
   const me = useMemo(() => people?.find((p) => p.id === pid) || null, [people, pid]);
   useEffect(() => { if (people && pid && !me) { ls.del('ge_pid'); setPid(null); } }, [people, pid, me]);
@@ -87,7 +87,10 @@ function PublicApp() {
   if (peopleErr) return <div className="center-screen"><p className="err">Erreur de connexion à la base : {peopleErr}</p></div>;
   if (!settings || !people || !polls || !sessions || !codeChecked) return <Spinner />;
 
-  if (settings.requireCode && !code) {
+  const login = (id) => { setPid(id); setPinFor(null); setCreating(false); };
+
+  // Pas connecté et pas de code d'invitation valable → écran du code
+  if (!me && settings.requireCode && !code) {
     return (
       <>
         {gateMsg && <div className="banner warn">{gateMsg} — entre un nouveau code.</div>}
@@ -96,8 +99,7 @@ function PublicApp() {
     );
   }
 
-  const login = (id) => { setPid(id); setPinFor(null); setCreating(false); };
-
+  // Qui es-tu ? (liste des noms + PIN) ou inscription
   if (!me) {
     return (
       <>
@@ -145,9 +147,13 @@ function PublicApp() {
             <button className="me-btn" onClick={() => setMenu(!menu)} aria-label="Mon compte"><Avatar p={me} size={34} ring /></button>
             {menu && (
               <div className="dropdown" onMouseLeave={() => setMenu(false)}>
-                <div className="dd-head"><b>{me.prenom} {me.nom}</b><span className="muted tiny">Code perso : {me.pin}</span></div>
+                <div className="dd-head"><b>{me.prenom} {me.nom}</b>
+                  <span className="dd-code"><KeyRound size={14} /> Mon code perso : <b className="mono">{me.pin}</b></span>
+                </div>
                 <button onClick={() => { setEditing(true); setMenu(false); }}><Pencil size={16} /> Modifier mes dispos</button>
-                <button onClick={logout}><LogOut size={16} /> Changer d'utilisateur</button>
+                <button onClick={() => { setPollForm({}); setMenu(false); }}><Vote size={16} /> Créer un sondage</button>
+                <a className="dd-link" href="/admin"><ShieldCheck size={16} /> Espace admin</a>
+                <button className="dd-danger" onClick={logout}><LogOut size={16} /> Se déconnecter</button>
               </div>
             )}
           </div>

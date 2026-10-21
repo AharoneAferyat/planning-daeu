@@ -77,7 +77,7 @@ export default function AdminParticipants({ people, logs, polls, sessions }) {
                 </div>
               </div>
               <div className="meta-grid">
-                <span><em>Code perso</em><b className="mono">{p.pin || '—'}</b></span>
+                <span><em>Code perso (PIN)</em><b className="mono">{p.pin || '—'}</b></span>
                 <span><em>Dispo</em>{daysCount(p)} j · {fmtDur(totalMinutes(p))}/sem</span>
                 <span><em>Inscrit</em>{fmtDate(p.createdAt, false)}{p.createdByAdmin ? ' (admin)' : ''}</span>
                 <span><em>Dernière modif</em>{timeAgo(p.updatedAt)} · {p.updates || 0} modif(s)</span>

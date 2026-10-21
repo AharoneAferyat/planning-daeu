@@ -18,15 +18,26 @@ export async function log(type, actor, target = '', details = {}) {
 }
 
 // ---------- Hooks temps réel ----------
-function useCol(name, map, sort) {
+// Renvoie [lignes, erreur]
+function useColWithError(name, map, sort) {
   const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
   useEffect(() => onSnapshot(collection(db, name), (snap) => {
     let r = snap.docs.map((d) => map(d));
     if (sort) r = r.sort(sort);
     setRows(r);
-  }, (e) => { console.error(name, e); setRows([]); }), [name]);
-  return rows;
+    setError(null);
+  }, (e) => {
+    console.error(name, e);
+    setError(e.code === 'permission-denied'
+      ? 'Accès refusé par Firestore : les règles ne sont pas publiées (Firestore → Règles → coller firestore.rules → Publier).'
+      : e.message);
+    setRows([]);
+  }), [name]);
+  return [rows, error];
 }
+// Renvoie seulement les lignes
+const useCol = (name, map, sort) => useColWithError(name, map, sort)[0];
 const byCreatedDesc = (a, b) => (toDate(b.createdAt)?.getTime() || Date.now()) - (toDate(a.createdAt)?.getTime() || Date.now());
 
 export function useSettings() {
@@ -36,7 +47,7 @@ export function useSettings() {
     () => setSettings({ ...DEFAULT_SETTINGS })), []);
   return settings;
 }
-export const useParticipants = () => useCol('participants', (d) => ({ id: d.id, ...d.data() }),
+export const useParticipants = () => useColWithError('participants', (d) => ({ id: d.id, ...d.data() }),
   (a, b) => (a.prenom || '').localeCompare(b.prenom || '', 'fr') || (a.nom || '').localeCompare(b.nom || '', 'fr'));
 export const useInvites = () => useCol('invites', (d) => ({ code: d.id, ...d.data() }), byCreatedDesc);
 export const usePolls = () => useCol('polls', (d) => ({ id: d.id, ...d.data() }), byCreatedDesc);

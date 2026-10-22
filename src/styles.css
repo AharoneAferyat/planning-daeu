@@ -722,3 +722,5 @@ p.alert { display: block; }
 .avs-label, .avs-more { white-space: normal; }
 .sess-row .grow { min-width: 0; }
 html, body { overflow-x: clip; max-width: 100%; }
+.vote-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); flex: 1 1 200px; }
+.vote-status.ok { color: var(--ok); font-weight: 700; }

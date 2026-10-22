@@ -128,19 +128,21 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
   const notVoted = people.filter((p) => !poll.votes?.[p.id]);
   const scores = Object.fromEntries(poll.options.map((o) => [o.id, scoreOf(poll, o.id)]));
   const best = Math.max(0, ...Object.values(scores).map((s) => s.score));
-  const norm = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).filter(([, v]) => v).sort()));
-  const dirty = norm(draft) !== norm(myVotes);
   const deadlinePassed = poll.deadline && isPast(poll.deadline);
   const iVoted = me && poll.votes?.[me.id];
   const max = Number(poll.max) || 0;
 
-  const save = async () => {
-    setBusy(true);
-    const clean = Object.fromEntries(Object.entries(draft).filter(([, v]) => v));
-    await votePoll(poll, me, clean);
+  // Vote enregistré automatiquement à chaque clic
+  const vote = async (optId, k) => {
+    const next = { ...draft, [optId]: draft[optId] === k ? undefined : k };
+    const clean = Object.fromEntries(Object.entries(next).filter(([, v]) => v));
     setDraft(clean);
-    onTouched?.(poll.id);
-    setBusy(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    setBusy(true);
+    try {
+      await votePoll({ ...poll, votes: { ...(poll.votes || {}), [me.id]: draft } }, me, clean);
+      onTouched?.(poll.id);
+      setSaved(true); setTimeout(() => setSaved(false), 1800);
+    } finally { setBusy(false); }
   };
 
   const detailData = detail && optionGroups(poll, detail, people);
@@ -208,8 +210,8 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
               {canVote && (
                 <div className="vote-btns">
                   {Object.entries(VOTE).map(([k, v]) => (
-                    <button key={k} className={'vb ' + k + (draft[o.id] === k ? ' on' : '')}
-                      onClick={() => setDraft({ ...draft, [o.id]: draft[o.id] === k ? undefined : k })}>{v.label}</button>
+                    <button key={k} className={'vb ' + k + (draft[o.id] === k ? ' on' : '')} disabled={busy}
+                      onClick={() => vote(o.id, k)}>{v.label}</button>
                   ))}
                 </div>
               )}
@@ -220,9 +222,9 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
 
       <div className="poll-foot">
         {canVote && (
-          <button className="btn primary" disabled={!dirty || busy} onClick={save}>
-            {busy ? 'Envoi…' : saved ? <><Check size={16} /> Vote enregistré</> : iVoted ? 'Mettre à jour mon vote' : 'Envoyer mon vote'}
-          </button>
+          <span className={'vote-status' + (saved ? ' ok' : '')}>
+            {busy ? 'Enregistrement…' : saved ? <><Check size={15} /> Vote enregistré</> : iVoted ? <><Check size={15} /> Ton vote est pris en compte — tu peux le changer à tout moment</> : 'Clique sur Oui, Peut-être ou Non : c’est enregistré directement'}
+          </span>
         )}
         <span className="grow" />
         {!closed && canManage && <button className="btn" onClick={() => setClosing(true)}><Lock size={16} /> Clôturer</button>}

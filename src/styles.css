@@ -668,3 +668,20 @@ input[type=time], input[type=date] { min-width: 0; }
   .al-c-sess .pill { font-size: 11px; padding: 2px 7px; }
   .stats-strip { font-size: 12.5px; gap: 4px 12px; }
 }
+
+/* ---------- Barres d'outils sur petit écran ---------- */
+@media (max-width: 760px) {
+  .toolbar > p, .toolbar > .search { flex: 1 1 100%; }
+  .toolbar > .chips { flex: 1 1 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .toolbar > .btn { flex: 1 1 auto; }
+  .admin .brand-name { font-size: 14.5px; }
+  .admin .top-actions .btn.small { padding: 0 8px; }
+  .modal-foot .btn { flex: 1 1 auto; }
+  .poll-foot .btn { flex: 1 1 auto; }
+}
+.chip { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 760px) {
+  .arow-main { flex-wrap: wrap; }
+  .arow-main .grow { min-width: 140px; }
+  .meta-grid { grid-template-columns: 1fr 1fr; }
+}

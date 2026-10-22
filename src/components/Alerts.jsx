@@ -22,6 +22,7 @@ export function sessionReminders(sessions, meId) {
   const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
   // séance annulée : seuls les inscrits / la liste d'attente sont prévenus
   const relevant = upcoming.filter((s) => (s.cancelled ? sessionState(s, meId).status !== 'out' : (sessionState(s, meId).status !== 'out' || s.notify !== false)));
+  // (les séances hors de mon public sont déjà filtrées en amont)
   const limit = isoDate(addDays(new Date(), 3));
   const soon = relevant.filter((s) => s.date <= limit);
   const base = soon.length ? soon : relevant.slice(0, 1);

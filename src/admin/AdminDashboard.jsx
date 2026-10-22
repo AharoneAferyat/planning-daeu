@@ -4,6 +4,7 @@ import { DAYS, DISTANCES, FORMATS, LOG_TYPES, MOMENTS } from '../constants';
 import { inviteStatus } from '../data';
 import { DecisionCard, decisionsFor } from '../components/Alerts';
 import { ADMIN_ME } from '../config';
+import { FORMATIONS, SUBJECTS } from '../formations';
 import { bestSlots, duplicatePairs, momentsOf, fmt, fmtDur, isPast, timeAgo, toDate, totalMinutes } from '../utils';
 import { Avatar, AvatarStack, PeopleModal } from '../components/ui';
 
@@ -87,6 +88,8 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
         </div>
         <Bars title="Dispos par jour" rows={perDay} />
         <Bars title="Fréquence souhaitée" rows={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ label: `${n}×/sem`, n: people.filter((p) => p.freq === n).length }))} />
+        <Bars title="Formation" rows={[...Object.entries(FORMATIONS).map(([k, v]) => ({ label: v.short, n: people.filter((p) => p.formation === k).length, color: v.color })), { label: 'Non renseignée', n: people.filter((p) => !p.formation).length, color: '#9CA3AF' }]} />
+        <Bars title="Matières" rows={Object.entries(SUBJECTS).map(([k, v]) => ({ label: v.label, n: people.filter((p) => !p.subjects?.length || p.subjects.includes(k)).length, color: v.color }))} />
         <Bars title="Format" rows={Object.entries(FORMATS).map(([k, v]) => ({ label: v.short, n: people.filter((p) => p.format === k).length, color: v.color }))} />
         <Bars title="Déplacement" rows={Object.entries(DISTANCES).map(([k, v]) => ({ label: v.label, n: people.filter((p) => p.format !== 'visio' && p.distance === k).length, color: v.color }))} />
         <Bars title="Moment préféré" rows={Object.entries(MOMENTS).map(([k, v]) => ({ label: v.short, n: people.filter((p) => momentsOf(p).includes(k)).length }))} />

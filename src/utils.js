@@ -185,6 +185,8 @@ export function shortUA() {
 const FIELDS = {
   prenom: 'Prénom',
   nom: 'Nom',
+  formation: 'Formation',
+  subjects: 'Matières',
   pin: 'Code perso',
   color: 'Couleur',
   freq: 'Fréquence',
@@ -196,6 +198,8 @@ const FIELDS = {
 const show = (k, v) => {
   if (v === null || v === undefined || v === '') return '—';
   if (k === 'pin') return '••••';
+  if (k === 'subjects') return (v || []).length ? v.map((m) => ({ maths: 'Maths', physique: 'Physique', chimie: 'Chimie', bio: 'Biologie', francais: 'Français' })[m] || m).join(', ') : 'toutes';
+  if (k === 'formation') return ({ jour: 'DAEU Jour', soir: 'DAEU Soir', hybride: 'DAEU Hybride' })[v] || v;
   if (k === 'freq') return `${v}×/sem`;
   if (k === 'moments') return (v || []).map((m) => MOMENTS[m]?.short || m).join(' + ');
   if (k === 'format') return FORMATS[v]?.short || v;
@@ -205,8 +209,8 @@ const show = (k, v) => {
 export function diffParticipant(before = {}, after = {}) {
   const out = [];
   for (const k of Object.keys(FIELDS)) {
-    const b0 = k === 'moments' ? momentsOf(before) : before[k];
-    const a0 = k === 'moments' ? momentsOf(after) : after[k];
+    const b0 = k === 'moments' ? momentsOf(before) : k === 'subjects' ? (before[k] || []) : before[k];
+    const a0 = k === 'moments' ? momentsOf(after) : k === 'subjects' ? (after[k] || []) : after[k];
     if (JSON.stringify(b0 ?? null) !== JSON.stringify(a0 ?? null)) out.push({ field: FIELDS[k], from: show(k, b0), to: show(k, a0) });
   }
   const a = slotsSummary(before.slots), b = slotsSummary(after.slots);

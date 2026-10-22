@@ -18,6 +18,9 @@ import Filters, { EMPTY_FILTERS } from './components/Filters';
 import PollsView, { PollForm, SessionForm, SessionSheet } from './components/Polls';
 import { Avatar, Spinner, Toast } from './components/ui';
 import { AlertsBar, AlertsPopup } from './components/Alerts';
+import CatBar from './components/CatBar';
+import { canSee, FORMATIONS, inAudience, subjectOk } from './formations';
+import { log as logAction, updateParticipant } from './data';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 
 export default function App() {
@@ -49,6 +52,8 @@ function PublicApp() {
   const [pinFor, setPinFor] = useState(null);
 
   const [view, setView] = useState(() => ls.get('ge_view') || 'semaine');
+  const [cat, setCat] = useState(() => ls.get('ge_cat') || 'all');
+  const [sub, setSub] = useState(() => ls.get('ge_sub') || 'all');
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [highlight, setHighlight] = useState(null);
   const [weekStart, setWeekStart] = useState(() => weekStartOf(new Date()));
@@ -62,6 +67,8 @@ function PublicApp() {
   const clearToast = useCallback(() => setToast(''), []);
 
   useEffect(() => { ls.set('ge_view', view); }, [view]);
+  useEffect(() => { ls.set('ge_cat', cat); }, [cat]);
+  useEffect(() => { ls.set('ge_sub', sub); }, [sub]);
   useEffect(() => { if (settings?.appTitle) document.title = settings.appTitle; }, [settings?.appTitle]);
 
   // Re-vérifie le code mémorisé (s'il a été désactivé / a expiré, on redemande)
@@ -82,8 +89,16 @@ function PublicApp() {
   const me = useMemo(() => people?.find((p) => p.id === pid) || null, [people, pid]);
   useEffect(() => { if (people && pid && !me) { ls.del('ge_pid'); setPid(null); } }, [people, pid, me]);
 
-  const filtered = useMemo(() => (people || []).filter((p) => matchFilters(p, filters)), [people, filters]);
-  const pendingVotes = useMemo(() => (me && polls ? polls.filter((p) => p.status !== 'closed' && !p.votes?.[me.id]).length : 0), [polls, me]);
+  // Vue par formation / matière (les heures de cours sont retirées des dispos dans chaque vue)
+  const catPeople = useMemo(() => (people || [])
+    .filter((p) => (cat === 'all' || p.formation === cat) && (sub === 'all' || subjectOk({ subject: sub }, p.subjects))), [people, cat, sub]);
+  const filtered = useMemo(() => catPeople.filter((p) => matchFilters(p, filters)), [catPeople, filters]);
+  const seePolls = useMemo(() => (polls || []).filter((p) => canSee(p, me)), [polls, me]);
+  const seeSessions = useMemo(() => (sessions || []).filter((s) => canSee(s, me)), [sessions, me]);
+  const inView = (x) => (cat === 'all' || inAudience(x, cat)) && (sub === 'all' || !x.subject || x.subject === sub);
+  const viewPolls = useMemo(() => seePolls.filter(inView), [seePolls, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
+  const viewSessions = useMemo(() => seeSessions.filter(inView), [seeSessions, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendingVotes = useMemo(() => (me ? seePolls.filter((p) => p.status !== 'closed' && !p.votes?.[me.id]).length : 0), [seePolls, me]);
 
   if (peopleErr) return <div className="center-screen"><p className="err">Erreur de connexion à la base : {peopleErr}</p></div>;
   if (!settings || !people || !polls || !sessions || !codeChecked) return <Spinner />;
@@ -179,25 +194,46 @@ function PublicApp() {
       </nav>
 
       <main className="content">
+        {!me.formation && (
+          <div className="al-card missing-form">
+            <div className="grow">
+              <b>Indique ta formation DAEU</b>
+              <p className="muted tiny">Pour recevoir les sondages et séances de ta formation.</p>
+              <div className="row-btns">
+                {Object.entries(FORMATIONS).map(([k, v]) => (
+                  <button key={k} className="btn small" style={{ color: v.color }} onClick={async () => {
+                    await updateParticipant(me.id, { formation: k });
+                    logAction('participant_update', `${me.prenom} ${me.nom}`, `${me.prenom} ${me.nom}`, { changes: [{ field: 'Formation', from: '—', to: v.label }] });
+                    setCat(k); setToast(`Formation enregistrée : ${v.label}`);
+                  }}>{v.short}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <CatBar cat={cat} setCat={setCat} sub={sub} setSub={setSub} settings={settings} me={me} />
+
         <div className="stats-strip">
-          <span><b>{people.length}</b> inscrit{people.length > 1 ? 's' : ''}</span>
-          {filtered.length !== people.length && <span><b>{filtered.length}</b> avec les filtres</span>}
-          <span><b>{sessions.filter((s) => s.date >= isoDate(new Date())).length}</b> séance(s) à venir</span>
-          <span><b>{polls.filter((p) => p.status !== 'closed').length}</b> sondage(s) en cours</span>
+          <span><b>{catPeople.length}</b> inscrit{catPeople.length > 1 ? 's' : ''}</span>
+          {filtered.length !== catPeople.length && <span><b>{filtered.length}</b> avec les filtres</span>}
+          <span><b>{viewSessions.filter((s) => s.date >= isoDate(new Date()) && !s.cancelled).length}</b> séance(s) à venir</span>
+          <span><b>{viewPolls.filter((p) => p.status !== 'closed').length}</b> sondage(s) en cours</span>
         </div>
 
-        <AlertsBar sessions={sessions} polls={polls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
+        <AlertsBar sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
 
         {view !== 'seances' && (
           <Filters filters={filters} setFilters={setFilters} people={filtered} highlight={highlight} setHighlight={setHighlight} />
         )}
 
-        {view === 'semaine' && <WeekView people={filtered} sessions={sessions} weekStart={weekStart} setWeekStart={setWeekStart}
+        {view === 'semaine' && <WeekView people={filtered} sessions={viewSessions} settings={settings}
+          courseOf={cat !== 'all' ? { formation: cat, subjects: sub === 'all' ? null : [sub], label: 'cours' } : me.formation ? { formation: me.formation, subjects: me.subjects, label: 'tes cours' } : null} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} onCell={setCell} onSession={setSessionOpen} meId={me.id} />}
-        {view === 'jours' && <DayView people={filtered} sessions={sessions} weekStart={weekStart} setWeekStart={setWeekStart}
+        {view === 'jours' && <DayView people={filtered} sessions={viewSessions} settings={settings} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} setHighlight={setHighlight} meId={me.id} onSession={setSessionOpen} />}
-        {view === 'creneaux' && <BestSlots people={filtered} onPoll={pollFromSlot} onPlan={planFromSlot} meId={me.id} />}
-        {view === 'seances' && <PollsView polls={polls} sessions={sessions} people={people} me={me} isAdmin={false}
+        {view === 'creneaux' && <BestSlots people={filtered} settings={settings} onPoll={pollFromSlot} onPlan={planFromSlot} meId={me.id} />}
+        {view === 'seances' && <PollsView polls={viewPolls} sessions={viewSessions} people={people} me={me} isAdmin={false} settings={settings}
           onSession={setSessionOpen} openPollForm={(p) => setPollForm({ initial: p })} openSessionForm={(s) => setSessionForm({ initial: s })} />}
         {view === 'gens' && <PeopleView people={filtered} meId={me.id} highlight={highlight} setHighlight={setHighlight} />}
       </main>
@@ -205,7 +241,7 @@ function PublicApp() {
 
       {editing && <DispoForm existing={me} people={people} onClose={() => setEditing(false)}
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
-      {cell && <CellSheet cell={cell} people={filtered} meId={me.id} onClose={() => setCell(null)}
+      {cell && <CellSheet cell={cell} people={filtered} settings={settings} meId={me.id} onClose={() => setCell(null)}
         onPlan={(x) => { setCell(null); planFromSlot(x); }} />}
       {sessionOpen && (() => {
         const live = sessions.find((s) => s.id === sessionOpen.id);
@@ -213,11 +249,11 @@ function PublicApp() {
         return <SessionSheet s={live} people={people} me={me} isAdmin={false} onClose={() => setSessionOpen(null)}
           onEdit={() => { setSessionForm({ initial: live }); setSessionOpen(null); }} />;
       })()}
-      {pollForm && <PollForm initial={pollForm.initial} prefill={pollForm.prefill} people={people} me={me}
+      {pollForm && <PollForm initial={pollForm.initial} prefill={pollForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}
         onClose={() => { setPollForm(null); setView('seances'); }} />}
-      {sessionForm && <SessionForm initial={sessionForm.initial} prefill={sessionForm.prefill} people={people} me={me}
+      {sessionForm && <SessionForm initial={sessionForm.initial} prefill={sessionForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}
         onClose={() => setSessionForm(null)} />}
-      <AlertsPopup sessions={sessions} polls={polls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
+      <AlertsPopup sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
       <Toast text={toast} onDone={clearToast} />
     </div>
   );

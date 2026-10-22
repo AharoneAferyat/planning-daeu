@@ -9,12 +9,17 @@ import {
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 import { placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
+import { audienceLabel, conflictsFor, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
 
 // Nombre de personnes dispo d'après le planning pour une date/heure
-export function forecast(people, date, s, e) {
+// ctx = { settings, item } : limite au public visé et retire les heures de cours si demandé
+export function forecast(allPeople, date, s, e, ctx = {}) {
   const wd = parseIso(date).getDay();
+  const { settings, item } = ctx;
+  let people = item ? allPeople.filter((p) => personInAudience(item, p)) : allPeople;
+  if (item?.respectSchedule !== false && settings) people = people.map((p) => withoutCourses(p, settings, date, wd));
   const full = people.filter((p) => (p.slots || []).some((x) => x.d === wd && x.s <= s && x.e >= e));
   const part = people.filter((p) => !full.includes(p) && (p.slots || []).some((x) => x.d === wd && x.s < e && x.e > s));
   return { full, part };
@@ -29,7 +34,7 @@ function scoreOf(poll, optId) {
 }
 
 // =================== Vue principale ===================
-export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm, onPollTouched }) {
+export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm, onPollTouched, settings }) {
   const [showPast, setShowPast] = useState(false);
   const today = isoDate(new Date());
   const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
@@ -53,12 +58,12 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
 
       <h3 className="sec-title"><Vote size={18} /> Sondages en cours</h3>
       {open.length === 0 ? <Empty icon={Vote} title="Aucun sondage en cours">Propose quelques dates et laisse chacun voter.</Empty>
-        : open.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} onEdit={() => openPollForm(p)} onTouched={onPollTouched} />)}
+        : open.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)} onTouched={onPollTouched} />)}
 
       {closed.length > 0 && (
         <>
           <h3 className="sec-title"><Lock size={18} /> Sondages terminés</h3>
-          {closed.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} onEdit={() => openPollForm(p)}
+          {closed.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)}
             onSession={() => { const s = sessions.find((x) => x.id === p.sessionId); if (s) onSession(s); }} />)}
         </>
       )}
@@ -87,6 +92,7 @@ function SessionRow({ s, people, me, onClick, isToday }) {
       <div className="grow">
         <strong>{s.title}</strong>
         <div className="muted tiny">{fmtDay(s.date, { weekday: 'long' })} · {fmt(s.s)}–{fmt(s.e)} · {SESSION_FORMATS[s.format] || s.format}{s.place ? ` · ${s.place}` : ''}</div>
+        <AudiencePill item={s} />
         <AvatarStack people={att} max={8} size={22} label={placesLabel(s)} />
       </div>
       {s.cancelled && <span className="pill bad">Annulée</span>}
@@ -99,14 +105,15 @@ function SessionRow({ s, people, me, onClick, isToday }) {
 }
 
 // =================== Carte de sondage ===================
-function optionGroups(poll, o, people) {
+function optionGroups(poll, o, allPeople, settings) {
+  const people = allPeople.filter((p) => personInAudience(poll, p) || poll.votes?.[p.id]);
   const v = poll.votes || {};
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const by = (k) => people.filter((p) => v[p.id]?.[o.id] === k);
   const yes = yesOrder(poll, o.id).map((id) => byId[id]).filter(Boolean);
   const { inn, wait } = splitPlaces(yes, Number(poll.max) || 0);
   const answered = new Set([...yes, ...by('maybe'), ...by('no')].map((p) => p.id));
-  const fc = forecast(people, o.date, o.s, o.e);
+  const fc = forecast(allPeople, o.date, o.s, o.e, { settings, item: poll });
   const noAnswer = people.filter((p) => !answered.has(p.id));
   return {
     yes, yesIn: inn, yesWait: wait, maybe: by('maybe'), no: by('no'), fc,
@@ -115,7 +122,7 @@ function optionGroups(poll, o, people) {
   };
 }
 
-function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
+function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, settings }) {
   const closed = poll.status === 'closed';
   const myVotes = (me && poll.votes?.[me.id]) || {};
   const [draft, setDraft] = useState(myVotes);
@@ -127,7 +134,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
   const canManage = isAdmin || (me && poll.createdBy === me.id);
   const canVote = !closed && me && me.id !== 'admin';
   const voters = Object.keys(poll.votes || {}).map((id) => people.find((p) => p.id === id)).filter(Boolean);
-  const notVoted = people.filter((p) => !poll.votes?.[p.id]);
+  const notVoted = people.filter((p) => !poll.votes?.[p.id] && personInAudience(poll, p));
   const scores = Object.fromEntries(poll.options.map((o) => [o.id, scoreOf(poll, o.id)]));
   const best = Math.max(0, ...Object.values(scores).map((s) => s.score));
   const deadlinePassed = poll.deadline && isPast(poll.deadline);
@@ -148,7 +155,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
     } finally { setBusy(false); }
   };
 
-  const detailData = detail && optionGroups(poll, detail, people);
+  const detailData = detail && optionGroups(poll, detail, people, settings);
 
   return (
     <div className={'card poll' + (closed ? ' closed' : '') + (canVote && !iVoted ? ' todo' : '')} id={`poll-${poll.id}`}>
@@ -161,6 +168,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
             {poll.deadline && <> · réponse avant le {fmtDayShort(poll.deadline)}{deadlinePassed && ' (dépassé)'}</>}
           </div>
           {poll.description && <p className="poll-desc">{poll.description}</p>}
+          <AudiencePill item={poll} />
           <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}{min > 0 ? ` · ${min} minimum` : ''}</div>
         </div>
         {canManage && (
@@ -180,7 +188,9 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
       <div className="opts">
         {poll.options.map((o) => {
           const sc = scores[o.id];
-          const g = optionGroups(poll, o, people);
+          const g = optionGroups(poll, o, people, settings);
+          const conf = poll.respectSchedule !== false ? conflictsFor(settings, poll.audience, o.date, o.s, o.e) : [];
+          const hol = holidayOn(settings, o.date);
           const isFinal = closed && poll.finalOptionId === o.id;
           const isBest = !closed && sc.score > 0 && sc.score === best;
           const total = Math.max(1, sc.yes + sc.maybe + sc.no);
@@ -193,6 +203,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
                   <span className="opt-time">{fmt(o.s)}–{fmt(o.e)}</span>
                   <ChevronRight size={16} className="opt-chev" />
                 </div>
+                {(conf.length > 0 || hol) && <ConflictPills conf={conf} hol={hol} />}
                 <div className="opt-bar" title={`${sc.yes} oui · ${sc.maybe} peut-être · ${sc.no} non`}>
                   <i className="yes" style={{ width: `${(sc.yes / total) * 100}%` }} />
                   <i className="maybe" style={{ width: `${(sc.maybe / total) * 100}%` }} />
@@ -310,11 +321,14 @@ function ClosePollModal({ poll, scores, me, onClose }) {
 }
 
 // =================== Formulaire de sondage ===================
-export function PollForm({ initial, prefill, people, me, onClose }) {
+export function PollForm({ initial, prefill, people, me, onClose, settings, defaultAudience = [], defaultSubject = '' }) {
   const isEdit = !!initial?.id;
   const [title, setTitle] = useState(initial?.title || 'Séance de révision');
   const [description, setDescription] = useState(initial?.description || '');
   const [format, setFormat] = useState(initial?.format || 'hybride');
+  const [audience, setAudience] = useState(initial?.audience || (initial?.id ? [] : defaultAudience.length ? defaultAudience : me?.formation ? [me.formation] : []));
+  const [subject, setSubject] = useState(initial?.subject || (initial?.id ? '' : defaultSubject));
+  const [respectSchedule, setRespectSchedule] = useState(initial?.respectSchedule !== false);
   const [place, setPlace] = useState(initial?.place || '');
   const [deadline, setDeadline] = useState(initial?.deadline || '');
   const [max, setMax] = useState(initial?.max || '');
@@ -345,7 +359,7 @@ export function PollForm({ initial, prefill, people, me, onClose }) {
     if (opts.length < 1) return setErr('Ajoute au moins une date.');
     if (Number(min) && Number(max) && Number(min) > Number(max)) return setErr('Le minimum ne peut pas dépasser le maximum.');
     opts.sort((a, b) => (a.date + a.s).localeCompare(b.date + b.s));
-    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, options: opts };
+    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts };
     setBusy(true);
     try {
       if (isEdit) await updatePoll(initial.id, data, actorName(me), data.title);
@@ -370,12 +384,17 @@ export function PollForm({ initial, prefill, people, me, onClose }) {
         <label className="field"><span>Répondre avant le</span><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
       </div>
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} />
+      <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject}
+        respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
 
       <h3 className="fsub">Dates proposées</h3>
       <div className="opt-edit">
         {options.map((o, i) => {
           const s = toMin(o.sh), e = toMin(o.eh);
-          const fc = o.date && s !== null && e !== null ? forecast(people, o.date, s, e) : null;
+          const item = { audience, subject, respectSchedule };
+          const fc = o.date && s !== null && e !== null ? forecast(people, o.date, s, e, { settings, item }) : null;
+          const conf = fc && respectSchedule ? conflictsFor(settings, audience, o.date, s, e) : [];
+          const hol = o.date && holidayOn(settings, o.date);
           return (
             <div key={o.id} className="oe-row">
               <input type="date" value={o.date} onChange={(ev) => setOpt(i, 'date', ev.target.value)} />
@@ -384,12 +403,13 @@ export function PollForm({ initial, prefill, people, me, onClose }) {
               <input type="time" step={900} value={o.eh} onChange={(ev) => setOpt(i, 'eh', ev.target.value)} />
               {fc && <span className="fc" title={fc.full.map((p) => p.prenom).join(', ')}><Users size={13} /> {fc.full.length}{fc.part.length ? ` (+${fc.part.length})` : ''}</span>}
               <button className="icon-btn" onClick={() => setOptions(options.filter((_, j) => j !== i))} disabled={options.length < 2}><Trash2 size={16} /></button>
+              {(conf.length > 0 || hol) && <div className="oe-warn"><ConflictPills conf={conf} hol={hol} /></div>}
             </div>
           );
         })}
       </div>
       <button className="btn small" onClick={add}><Plus size={15} /> Ajouter une date</button>
-      <p className="muted tiny">Le petit chiffre = nombre de personnes dispo sur tout le créneau d'après le planning (+ partiellement).</p>
+      <p className="muted tiny">Le petit chiffre = personnes du public visé dispo sur tout le créneau d'après le planning (+ partiellement){respectSchedule ? ', heures de cours retirées' : ''}.</p>
       {initial?.votes && Object.keys(initial.votes).length > 0 && <p className="alert warn tiny">Des votes existent déjà : si tu supprimes une date, ses votes disparaissent.</p>}
       {err && <p className="err">{err}</p>}
     </Modal>
@@ -442,6 +462,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
         <p><Users size={16} /> {SESSION_FORMATS[s.format] || s.format}</p>
         {s.place && <p><MapPin size={16} /> {/^https?:\/\//.test(s.place) ? <a href={s.place} target="_blank" rel="noreferrer">{s.place}</a> : s.place}</p>}
         {s.note && <p className="muted">{s.note}</p>}
+        <AudiencePill item={s} />
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
       {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}.</p>}
@@ -478,7 +499,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
   );
 }
 
-export function SessionForm({ initial, prefill, people, me, onClose }) {
+export function SessionForm({ initial, prefill, people, me, onClose, settings, defaultAudience = [], defaultSubject = '' }) {
   const isEdit = !!initial?.id;
   const base = initial || prefill || {};
   const [title, setTitle] = useState(base.title || 'Séance de révision');
@@ -486,6 +507,9 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
   const [sh, setSh] = useState(toHHMM(base.s ?? 840));
   const [eh, setEh] = useState(toHHMM(base.e ?? 1020));
   const [format, setFormat] = useState(base.format || 'hybride');
+  const [audience, setAudience] = useState(base.audience || (isEdit ? [] : defaultAudience.length ? defaultAudience : me?.formation ? [me.formation] : []));
+  const [subject, setSubject] = useState(base.subject || (isEdit ? '' : defaultSubject));
+  const [respectSchedule, setRespectSchedule] = useState(base.respectSchedule !== false);
   const [place, setPlace] = useState(base.place || '');
   const [note, setNote] = useState(base.note || '');
   const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
@@ -496,7 +520,10 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const s = toMin(sh), e0 = toMin(eh);
-  const fc = useMemo(() => (date && s !== null && e0 !== null ? forecast(people, date, s, e0) : null), [people, date, s, e0]);
+  const item = { audience, subject, respectSchedule };
+  const fc = useMemo(() => (date && s !== null && e0 !== null ? forecast(people, date, s, e0, { settings, item }) : null), [people, date, s, e0, settings, audience, subject, respectSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
+  const conf = fc && respectSchedule ? conflictsFor(settings, audience, date, s, e0) : [];
+  const hol = date && holidayOn(settings, date);
 
   const save = async () => {
     setErr('');
@@ -509,7 +536,7 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
     let att = [...attendees];
     let wait = (base.waitlist || []).filter((x) => !att.includes(x));
     if (m && att.length > m) { wait = [...att.slice(m), ...wait]; att = att.slice(0, m); }
-    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify };
+    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify, audience, subject: subject || null, respectSchedule };
     setBusy(true);
     try {
       if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
@@ -537,7 +564,10 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
         <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>
       </div>
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
+      {(conf.length > 0 || hol) && <p className="oe-warn"><ConflictPills conf={conf} hol={hol} /></p>}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />
+      <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject}
+        respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
       <NotifyCheck value={notify} onChange={setNotify} />
       <h3 className="fsub">Participants ({attendees.length}{Number(max) ? `/${max}` : ''})</h3>
       {Number(max) > 0 && attendees.length > Number(max) && <p className="muted tiny">Au-delà de {max}, les derniers ajoutés passeront en liste d'attente.</p>}
@@ -584,6 +614,61 @@ function PlacesFields({ max, setMax, min, setMin, maxLocked }) {
         {maxLocked ? 'Le nombre de places est fixé par le sondage. ' : ''}
         Max : premier arrivé, premier servi, puis liste d'attente. Min : si quelqu'un se désiste et qu'on passe en dessous, le créateur de la séance est prévenu pour décider d'annuler ou de maintenir.
       </small>
+    </div>
+  );
+}
+
+export function AudiencePill({ item }) {
+  if (!item?.audience?.length && !item?.subject) return null;
+  return (
+    <div className="aud-row">
+      {item.subject && <span className="pill aud" style={{ '--c': SUBJECTS[item.subject]?.color }}>{SUBJECTS[item.subject]?.label}</span>}
+      {(item.audience || []).map((f) => <span key={f} className="pill aud" style={{ '--c': FORMATIONS[f]?.color }}>{FORMATIONS[f]?.label}</span>)}
+    </div>
+  );
+}
+
+export function ConflictPills({ conf, hol }) {
+  return (
+    <span className="conf-row">
+      {hol && <span className="pill ok">Vacances de {hol.label}</span>}
+      {conf.map((x, i) => (
+        <span key={i} className="conflict" title="Des cours ont lieu à ce moment">
+          Cours {FORMATIONS[x.f]?.short} : {SUBJECTS[x.c.subject]?.label || x.c.subject} {fmt(x.c.s)}–{fmt(x.c.e)}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function AudienceFields({ audience, setAudience, subject, setSubject, respectSchedule, setRespectSchedule }) {
+  return (
+    <div className="aud-fields">
+      <div className="field"><span>Pour quelle formation ? <small className="muted">(rien de coché = toutes)</small></span>
+        <div className="chips">
+          {Object.entries(FORMATIONS).map(([k, v]) => {
+            const on = audience.includes(k);
+            return (
+              <button type="button" key={k} className={'chip' + (on ? ' on' : '')} style={{ '--c': v.color }}
+                onClick={() => setAudience(on ? audience.filter((x) => x !== k) : [...audience, k])}>{v.label}</button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="field"><span>Matière à réviser <small className="muted">(facultatif)</small></span>
+        <div className="chips">
+          <button type="button" className={'chip' + (!subject ? ' on' : '')} onClick={() => setSubject('')}>Aucune en particulier</button>
+          {Object.entries(SUBJECTS).map(([k, v]) => (
+            <button type="button" key={k} className={'chip' + (subject === k ? ' on' : '')} style={{ '--c': v.color }} onClick={() => setSubject(k)}>{v.label}</button>
+          ))}
+        </div>
+        {subject && <small className="muted">Seuls ceux qui ont cette matière (ou qui n'ont pas précisé leurs matières) le verront.</small>}
+      </div>
+      <label className="switch">
+        <input type="checkbox" checked={respectSchedule} onChange={(e) => setRespectSchedule(e.target.checked)} />
+        <span><b>Tenir compte de l'emploi du temps</b><br />
+          <small className="muted">Signale les dates qui tombent pendant un cours ou les vacances, et ne compte pas comme dispo ceux qui sont en cours.</small></span>
+      </label>
     </div>
   );
 }

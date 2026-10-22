@@ -5,6 +5,7 @@ import { createParticipant, deleteParticipant, log, updateParticipant } from '..
 import { capName, diffParticipant, momentsOf, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
 import { Chips, ConfirmButton, FormatIcon, MOMENT_ICON, Modal } from './ui';
 import { PinInput } from './AccessScreens';
+import { FORMATIONS, SUBJECTS } from '../formations';
 
 const emptyDays = () => Array.from({ length: 7 }, () => []);
 
@@ -14,6 +15,8 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
   const [prenom, setPrenom] = useState(existing?.prenom || '');
   const [nom, setNom] = useState(existing?.nom || '');
   const [pin, setPin] = useState(existing?.pin || '');
+  const [formation, setFormation] = useState(existing?.formation || '');
+  const [subjects, setSubjects] = useState(existing?.subjects || []);
   const [color, setColor] = useState(existing?.color || PALETTE.find((c) => !usedColors.includes(c)) || PALETTE[people.length % PALETTE.length]);
   const [freq, setFreq] = useState(existing?.freq || 2);
   const [moments, setMoments] = useState(() => momentsOf(existing || {}));
@@ -45,6 +48,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
     if (exact) return setErr(`${exact.p.prenom} ${exact.p.nom} existe déjà.`);
     if (needsConfirm) return setErr('Un nom ressemble au tien : confirme que tu es une autre personne.');
     if (!/^\d{4}$/.test(String(pin))) return setErr('Le code perso doit faire 4 chiffres.');
+    if (!formation) return setErr('Indique ta formation DAEU (Jour, Soir ou Hybride).');
     const slots = [];
     for (let d = 0; d < 7; d++) {
       for (const x of days[d]) {
@@ -57,7 +61,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
     }
     if (!slots.length) return setErr('Ajoute au moins un créneau de dispo.');
     const data = {
-      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), color, freq, moments, moment: null, format,
+      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), formation, subjects, color, freq, moments, moment: null, format,
       distance: format === 'visio' ? null : distance, note: note.trim().slice(0, 200), slots: normalizeSlots(slots),
     };
     setBusy(true);
@@ -130,6 +134,22 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
           </div>
         )}
 
+
+        <div className="field"><span>Ta formation DAEU *</span>
+          <div className="formation-pick">
+            {Object.entries(FORMATIONS).map(([k, v]) => (
+              <button type="button" key={k} className={'fpick' + (formation === k ? ' on' : '')} style={{ '--c': v.color }} onClick={() => setFormation(k)}>
+                <b>{v.short}</b><small>{v.hint}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field"><span>Tes matières <small className="muted">(rien de coché = toutes)</small></span>
+          <Chips multi value={subjects} onChange={setSubjects}
+            options={Object.entries(SUBJECTS).map(([k, v]) => ({ value: k, label: v.label, color: v.color }))} />
+          <small className="muted">Sert aux sondages par matière et à savoir quand tu es en cours.</small>
+        </div>
 
         <label className="field narrow"><span>Code perso (4 chiffres) *</span>
           <PinInput value={pin} onChange={setPin} />

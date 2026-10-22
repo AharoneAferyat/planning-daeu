@@ -4,6 +4,7 @@ import { DAYS_SHORT, DISTANCES, FORMATS } from '../constants';
 import { fetchAll, log, saveSettings, wipeCollection } from '../data';
 import { download, fmt, fmtDate, hashPin, momentsLabel, totalMinutes, fmtDur } from '../utils';
 import { ConfirmButton, Toast } from '../components/ui';
+import ScheduleEditor from './ScheduleEditor';
 
 export default function AdminSettings({ settings, people }) {
   const [appTitle, setAppTitle] = useState(settings.appTitle);
@@ -39,11 +40,11 @@ export default function AdminSettings({ settings, people }) {
 
   const exportCsv = () => {
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Prénom', 'Nom', 'Code perso', 'Fréquence', 'Moment', 'Format', 'Déplacement', 'Heures/sem', ...DAYS_SHORT, 'Note', 'Inscrit le', 'Modifié le', 'Via code'];
+    const head = ['Prénom', 'Nom', 'Formation', 'Matières', 'Code perso', 'Fréquence', 'Moment', 'Format', 'Déplacement', 'Heures/sem', ...DAYS_SHORT, 'Note', 'Inscrit le', 'Modifié le', 'Via code'];
     const rows = [head.join(';')];
     for (const p of people) {
       const days = DAYS_SHORT.map((_, d) => (p.slots || []).filter((s) => s.d === d).map((s) => `${fmt(s.s)}-${fmt(s.e)}`).join(' '));
-      rows.push([p.prenom, p.nom, p.pin, p.freq, momentsLabel(p), FORMATS[p.format]?.short,
+      rows.push([p.prenom, p.nom, p.formation || '', (p.subjects || []).join(', ') || 'toutes', p.pin, p.freq, momentsLabel(p), FORMATS[p.format]?.short,
         p.format === 'visio' ? '' : DISTANCES[p.distance]?.label, fmtDur(totalMinutes(p)), ...days, p.note,
         fmtDate(p.createdAt), fmtDate(p.updatedAt), p.viaCode].map(esc).join(';'));
     }
@@ -59,6 +60,7 @@ export default function AdminSettings({ settings, people }) {
 
   return (
     <div className="settings">
+      <ScheduleEditor settings={settings} onSaved={setToast} />
       <div className="card">
         <h4 className="card-title">Général</h4>
         <label className="field"><span>Nom du site</span><input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} maxLength={40} /></label>

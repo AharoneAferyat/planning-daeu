@@ -3,10 +3,14 @@ import { DAYS } from '../constants';
 import { compat, compatText, fmt, fmtDay, slotsOf } from '../utils';
 import { Empty, Modal, PeopleGroups } from './ui';
 import { fullAt } from './WeekView';
+import { conflictsFor, FORMATIONS, holidayOn, SUBJECTS, withoutCourses } from '../formations';
 
 // Fenêtre « qui est dispo » pour une case du planning (jour + plage horaire)
-export default function CellSheet({ cell, people, meId, onClose, onPlan }) {
+export default function CellSheet({ cell, people: rawPeople, meId, onClose, onPlan, settings }) {
   const { d, s, e, date } = cell;
+  const people = rawPeople.map((p) => withoutCourses(p, settings, date, d));
+  const courses = date ? conflictsFor(settings, null, date, s, e) : [];
+  const hol = date && holidayOn(settings, date);
   const full = people.filter((p) => fullAt(p, d, s, e));
   const partial = people.filter((p) => !full.includes(p) && slotsOf(p, d).some((x) => x.s < e && x.e > s));
   const c = full.length > 1 ? compat(full) : null;
@@ -27,6 +31,10 @@ export default function CellSheet({ cell, people, meId, onClose, onPlan }) {
           <CalendarPlus size={16} /> Planifier une séance ({fmt(ps)}–{fmt(pe)})
         </button>
       )}>
+      {hol && <p className="hol-note">Vacances de {hol.label}</p>}
+      {courses.length > 0 && (
+        <p className="course-note">Cours à ce moment : {courses.map((x, i) => <span key={i} className="sched-item" style={{ '--c': SUBJECTS[x.c.subject]?.color }}><b>{FORMATIONS[x.f].short}</b> {SUBJECTS[x.c.subject]?.label} <em>{fmt(x.c.s)}–{fmt(x.c.e)}</em></span>)}</p>
+      )}
       {c && <p className="compat-line">{compatText(c)}</p>}
       {full.length + partial.length === 0 ? <Empty icon={UserX} title="Personne à cette heure-là" /> : (
         <PeopleGroups meId={meId} groups={[

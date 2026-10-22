@@ -4,14 +4,17 @@ import { DAYS, DAYS_SHORT } from '../constants';
 import { addDays, availAt, fmt, isoDate, slotsOf, timeRange } from '../utils';
 import { Avatar, Empty, Name, PersonBadges } from './ui';
 import { WeekNav } from './WeekView';
+import { holidayOn, withoutCourses } from '../formations';
 
-export default function DayView({ people, sessions, weekStart, setWeekStart, highlight, setHighlight, meId, onSession }) {
+export default function DayView({ people: rawPeople, sessions, weekStart, setWeekStart, highlight, setHighlight, meId, onSession, settings }) {
   const [d, setD] = useState(new Date().getDay());
   const date = isoDate(addDays(weekStart, d));
-  const { start, end } = useMemo(() => timeRange(people), [people]);
+  // Dispos de ce jour-là, heures de cours retirées
+  const people = useMemo(() => rawPeople.map((p) => withoutCourses(p, settings, date, d)), [rawPeople, settings, date, d]);
+  const { start, end } = useMemo(() => timeRange(rawPeople), [rawPeople]);
   const span = end - start;
   const pct = (m) => `${((Math.min(Math.max(m, start), end) - start) / span) * 100}%`;
-
+  const hol = holidayOn(settings, date);
   const rows = people
     .filter((p) => p.slots?.some((s) => s.d === d))
     .map((p) => ({ p, slots: slotsOf(p, d) }))
@@ -29,7 +32,7 @@ export default function DayView({ people, sessions, weekStart, setWeekStart, hig
       <WeekNav weekStart={weekStart} setWeekStart={setWeekStart} />
       <div className="day-tabs">
         {DAYS_SHORT.map((n, i) => {
-          const c = people.filter((p) => p.slots?.some((s) => s.d === i)).length;
+          const c = rawPeople.map((p) => withoutCourses(p, settings, isoDate(addDays(weekStart, i)), i)).filter((p) => p.slots?.some((s) => s.d === i)).length;
           const dt = addDays(weekStart, i);
           const hasSess = sessions.some((s) => s.date === isoDate(dt));
           return (
@@ -45,6 +48,7 @@ export default function DayView({ people, sessions, weekStart, setWeekStart, hig
       <h3 className="dv-title">{DAYS[d]} {addDays(weekStart, d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
         <span className="muted"> · {rows.length} personne{rows.length > 1 ? 's' : ''} dispo</span></h3>
 
+      {hol && <p className="hol-note">Vacances de {hol.label} : pas de cours ce jour-là.</p>}
       {daySessions.map((s) => (
         <button key={s.id} className="sess-line" onClick={() => onSession(s)}>
           <CalendarCheck size={18} />

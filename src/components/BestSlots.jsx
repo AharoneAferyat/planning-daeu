@@ -3,8 +3,11 @@ import { CalendarPlus, Clock, Minus, Plus, Sparkles, Vote } from 'lucide-react';
 import { DAYS } from '../constants';
 import { bestSlots, compat, compatText, fmt, fmtDur } from '../utils';
 import { AvatarStack, Empty, PeopleModal } from './ui';
+import { withoutCourses } from '../formations';
 
-export default function BestSlots({ people, onPoll, onPlan, meId }) {
+export default function BestSlots({ people: rawPeople, onPoll, onPlan, meId, settings }) {
+  // Semaine type : on retire les heures de cours de chacun
+  const people = useMemo(() => rawPeople.map((p) => withoutCourses(p, settings)), [rawPeople, settings]);
   const [minPeople, setMinPeople] = useState(2);
   const [minDur, setMinDur] = useState(60);
   const [open, setOpen] = useState(null);

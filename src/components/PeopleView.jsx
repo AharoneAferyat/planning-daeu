@@ -2,6 +2,7 @@ import { Users } from 'lucide-react';
 import { DAYS_SHORT } from '../constants';
 import { daysCount, fmtDur, slotsOf, timeAgo, totalMinutes } from '../utils';
 import { Avatar, Empty, Name, PersonBadges } from './ui';
+import { SUBJECT_KEYS, SUBJECTS } from '../formations';
 
 export default function PeopleView({ people, meId, highlight, setHighlight }) {
   if (!people.length) return <div className="card"><Empty icon={Users} title="Personne pour l'instant">Partage le lien pour que les autres s'inscrivent.</Empty></div>;
@@ -18,6 +19,7 @@ export default function PeopleView({ people, meId, highlight, setHighlight }) {
             </div>
           </div>
           <PersonBadges p={p} />
+          <div className="subj-row">{(p.subjects?.length ? p.subjects : SUBJECT_KEYS).map((k) => <span key={k} className="sched-item" style={{ '--c': SUBJECTS[k]?.color }}>{SUBJECTS[k]?.label}</span>)}</div>
           <div className="mini-week">
             {DAYS_SHORT.map((n, d) => {
               const sl = slotsOf(p, d);

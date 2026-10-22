@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MapPin, Moon, Shuffle, Sun, Sunrise, SunMedium, Users, Video, X } from 'lucide-react';
-import { DISTANCES, FORMATS, MOMENTS } from '../constants';
-import { initials, shortName } from '../utils';
+import { DISTANCES, FORMATS } from '../constants';
+import { initials, momentsLabel, momentsOf, shortName } from '../utils';
 
 export const MOMENT_ICON = { matin: Sunrise, aprem: Sun, soir: Moon, journee: SunMedium, egal: Shuffle };
 
@@ -115,7 +115,6 @@ export function FormatIcon({ format, size = 14 }) {
 }
 
 export function PersonBadges({ p, compact }) {
-  const MI = MOMENT_ICON[p.moment] || Shuffle;
   const f = FORMATS[p.format] || FORMATS.both;
   const dist = p.format !== 'visio' ? DISTANCES[p.distance] : null;
   return (
@@ -123,8 +122,9 @@ export function PersonBadges({ p, compact }) {
       <span className="badge freq" style={{ '--lvl': (p.freq || 1) / 7 }} title={`Veut bosser ${p.freq || 1} fois / semaine`}>
         {p.freq || 1}×{!compact && <small>/sem</small>}
       </span>
-      <span className="badge" title={MOMENTS[p.moment]?.label}>
-        <MI size={13} />{!compact && <span>{MOMENTS[p.moment]?.short}</span>}
+      <span className="badge" title={`Moments préférés : ${momentsLabel(p)}`}>
+        {momentsOf(p).map((m) => { const MI = MOMENT_ICON[m] || Shuffle; return <MI key={m} size={13} />; })}
+        {!compact && <span>{momentsLabel(p)}</span>}
       </span>
       <span className="badge tint" style={{ '--c': f.color }} title={f.label}>
         <FormatIcon format={p.format} size={13} />{!compact && <span>{f.short}</span>}

@@ -6,12 +6,12 @@ export const PALETTE = [
   '#3D5A80', '#7CB518', '#FF7F11', '#00A6A6', '#9B5DE5', '#8D6E63',
 ];
 
+// Plusieurs choix possibles (sauf « Peu importe », qui est seul)
 export const MOMENTS = {
-  matin:   { label: 'Plutôt le matin',      short: 'Matin' },
-  aprem:   { label: "Plutôt l'après-midi",  short: 'Après-midi' },
-  soir:    { label: 'Plutôt le soir',       short: 'Soir' },
-  journee: { label: 'Matin & après-midi',   short: 'Journée' },
-  egal:    { label: 'Peu importe',          short: 'Peu importe' },
+  matin: { label: 'Le matin',       short: 'Matin' },
+  aprem: { label: "L'après-midi",   short: 'Après-midi' },
+  soir:  { label: 'Le soir',        short: 'Soir' },
+  egal:  { label: 'Peu importe',    short: 'Peu importe' },
 };
 
 export const FORMATS = {

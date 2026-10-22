@@ -1,5 +1,13 @@
 import { DAYS_SHORT, DISTANCES, FORMATS, MOMENTS } from './constants';
 
+// Moments préférés d'une personne (compatible avec l'ancien choix unique)
+export function momentsOf(p) {
+  if (Array.isArray(p?.moments) && p.moments.length) return p.moments;
+  if (p?.moment === 'journee') return ['matin', 'aprem'];
+  return p?.moment && MOMENTS[p.moment] ? [p.moment] : ['egal'];
+}
+export const momentsLabel = (p) => momentsOf(p).map((m) => MOMENTS[m]?.short || m).join(' + ');
+
 export const pad = (n) => String(n).padStart(2, '0');
 
 export const toMin = (hhmm) => {
@@ -61,7 +69,7 @@ export function matchFilters(p, f) {
     if (!ok) return false;
   }
   if (f.distance.length && !(p.format !== 'visio' && f.distance.includes(p.distance))) return false;
-  if (f.moment.length && !f.moment.includes(p.moment)) return false;
+  if (f.moment.length && !f.moment.some((m) => momentsOf(p).includes(m) || momentsOf(p).includes('egal'))) return false;
   return true;
 }
 
@@ -180,7 +188,7 @@ const FIELDS = {
   pin: 'Code perso',
   color: 'Couleur',
   freq: 'Fréquence',
-  moment: 'Moment préféré',
+  moments: 'Moments préférés',
   format: 'Format',
   distance: 'Déplacement',
   note: 'Note',
@@ -189,7 +197,7 @@ const show = (k, v) => {
   if (v === null || v === undefined || v === '') return '—';
   if (k === 'pin') return '••••';
   if (k === 'freq') return `${v}×/sem`;
-  if (k === 'moment') return MOMENTS[v]?.short || v;
+  if (k === 'moments') return (v || []).map((m) => MOMENTS[m]?.short || m).join(' + ');
   if (k === 'format') return FORMATS[v]?.short || v;
   if (k === 'distance') return DISTANCES[v]?.label || v;
   return String(v);
@@ -197,7 +205,9 @@ const show = (k, v) => {
 export function diffParticipant(before = {}, after = {}) {
   const out = [];
   for (const k of Object.keys(FIELDS)) {
-    if ((before[k] ?? null) !== (after[k] ?? null)) out.push({ field: FIELDS[k], from: show(k, before[k]), to: show(k, after[k]) });
+    const b0 = k === 'moments' ? momentsOf(before) : before[k];
+    const a0 = k === 'moments' ? momentsOf(after) : after[k];
+    if (JSON.stringify(b0 ?? null) !== JSON.stringify(a0 ?? null)) out.push({ field: FIELDS[k], from: show(k, b0), to: show(k, a0) });
   }
   const a = slotsSummary(before.slots), b = slotsSummary(after.slots);
   if (a !== b) out.push({ field: 'Créneaux', from: a, to: b });

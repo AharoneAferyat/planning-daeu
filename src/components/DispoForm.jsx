@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Copy, Plus, Trash2, UserCheck } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, MOMENTS, PALETTE, PRESETS } from '../constants';
 import { createParticipant, deleteParticipant, log, updateParticipant } from '../data';
-import { capName, diffParticipant, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
+import { capName, diffParticipant, momentsOf, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
 import { Chips, ConfirmButton, FormatIcon, MOMENT_ICON, Modal } from './ui';
 import { PinInput } from './AccessScreens';
 
@@ -16,7 +16,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
   const [pin, setPin] = useState(existing?.pin || '');
   const [color, setColor] = useState(existing?.color || PALETTE.find((c) => !usedColors.includes(c)) || PALETTE[people.length % PALETTE.length]);
   const [freq, setFreq] = useState(existing?.freq || 2);
-  const [moment, setMoment] = useState(existing?.moment || 'egal');
+  const [moments, setMoments] = useState(() => momentsOf(existing || {}));
   const [format, setFormat] = useState(existing?.format || 'both');
   const [distance, setDistance] = useState(existing?.distance || 'moyen');
   const [note, setNote] = useState(existing?.note || '');
@@ -57,7 +57,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
     }
     if (!slots.length) return setErr('Ajoute au moins un créneau de dispo.');
     const data = {
-      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), color, freq, moment, format,
+      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), color, freq, moments, moment: null, format,
       distance: format === 'visio' ? null : distance, note: note.trim().slice(0, 200), slots: normalizeSlots(slots),
     };
     setBusy(true);
@@ -158,8 +158,13 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
             ))}
           </div>
         </div>
-        <div className="field"><span>Quel moment tu préfères ?</span>
-          <Chips value={moment} onChange={setMoment}
+        <div className="field"><span>Quels moments tu préfères ? <small className="muted">(plusieurs choix possibles)</small></span>
+          <Chips multi value={moments} onChange={(v) => {
+            const added = v.find((m) => !moments.includes(m));
+            if (added === 'egal') return setMoments(['egal']);
+            const next = v.filter((m) => m !== 'egal');
+            setMoments(next.length ? next : ['egal']);
+          }}
             options={Object.entries(MOMENTS).map(([k, v]) => { const I = MOMENT_ICON[k]; return { value: k, label: v.label, icon: <I size={15} /> }; })} />
         </div>
         <div className="field"><span>Présentiel ou visio ?</span>

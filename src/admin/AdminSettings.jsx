@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { AlertTriangle, Download, KeyRound, Save } from 'lucide-react';
-import { DAYS_SHORT, DISTANCES, FORMATS, MOMENTS } from '../constants';
+import { DAYS_SHORT, DISTANCES, FORMATS } from '../constants';
 import { fetchAll, log, saveSettings, wipeCollection } from '../data';
-import { download, fmt, fmtDate, hashPin, totalMinutes, fmtDur } from '../utils';
+import { download, fmt, fmtDate, hashPin, momentsLabel, totalMinutes, fmtDur } from '../utils';
 import { ConfirmButton, Toast } from '../components/ui';
 
 export default function AdminSettings({ settings, people }) {
@@ -43,7 +43,7 @@ export default function AdminSettings({ settings, people }) {
     const rows = [head.join(';')];
     for (const p of people) {
       const days = DAYS_SHORT.map((_, d) => (p.slots || []).filter((s) => s.d === d).map((s) => `${fmt(s.s)}-${fmt(s.e)}`).join(' '));
-      rows.push([p.prenom, p.nom, p.pin, p.freq, MOMENTS[p.moment]?.short, FORMATS[p.format]?.short,
+      rows.push([p.prenom, p.nom, p.pin, p.freq, momentsLabel(p), FORMATS[p.format]?.short,
         p.format === 'visio' ? '' : DISTANCES[p.distance]?.label, fmtDur(totalMinutes(p)), ...days, p.note,
         fmtDate(p.createdAt), fmtDate(p.updatedAt), p.viaCode].map(esc).join(';'));
     }

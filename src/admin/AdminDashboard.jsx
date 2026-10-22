@@ -4,7 +4,7 @@ import { DAYS, DISTANCES, FORMATS, LOG_TYPES, MOMENTS } from '../constants';
 import { inviteStatus } from '../data';
 import { DecisionCard, decisionsFor } from '../components/Alerts';
 import { ADMIN_ME } from '../config';
-import { bestSlots, duplicatePairs, fmt, fmtDur, isPast, timeAgo, toDate, totalMinutes } from '../utils';
+import { bestSlots, duplicatePairs, momentsOf, fmt, fmtDur, isPast, timeAgo, toDate, totalMinutes } from '../utils';
 import { Avatar, AvatarStack, PeopleModal } from '../components/ui';
 
 function Bars({ title, rows }) {
@@ -89,7 +89,7 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
         <Bars title="Fréquence souhaitée" rows={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ label: `${n}×/sem`, n: people.filter((p) => p.freq === n).length }))} />
         <Bars title="Format" rows={Object.entries(FORMATS).map(([k, v]) => ({ label: v.short, n: people.filter((p) => p.format === k).length, color: v.color }))} />
         <Bars title="Déplacement" rows={Object.entries(DISTANCES).map(([k, v]) => ({ label: v.label, n: people.filter((p) => p.format !== 'visio' && p.distance === k).length, color: v.color }))} />
-        <Bars title="Moment préféré" rows={Object.entries(MOMENTS).map(([k, v]) => ({ label: v.short, n: people.filter((p) => p.moment === k).length }))} />
+        <Bars title="Moment préféré" rows={Object.entries(MOMENTS).map(([k, v]) => ({ label: v.short, n: people.filter((p) => momentsOf(p).includes(k)).length }))} />
         <div className="card">
           <h4 className="card-title">Fiches pas mises à jour depuis 30 j</h4>
           {inactive.length === 0 ? <p className="muted">Tout le monde est à jour.</p>

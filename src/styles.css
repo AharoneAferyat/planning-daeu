@@ -685,3 +685,40 @@ input[type=time], input[type=date] { min-width: 0; }
   .arow-main .grow { min-width: 140px; }
   .meta-grid { grid-template-columns: 1fr 1fr; }
 }
+.al-h-pill { margin-left: 8px; vertical-align: middle; }
+.al-poll.todo { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.al-poll-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.al-todo { color: var(--warn); font-weight: 700; }
+.al-card.al-c-polls.done { border-left-color: var(--ok); }
+.al-card.al-c-polls.done .al-ico { color: var(--ok); }
+
+/* ---------- Places & liste d'attente ---------- */
+.vc.places { color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.vc.places.full { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.my-place { align-self: flex-start; }
+.places-box { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: rgba(var(--accent-rgb), .06); margin: 6px 0 12px; }
+.places-box .muted { grid-column: 1 / -1; }
+.places-box.full { background: color-mix(in srgb, var(--bad) 8%, var(--surface)); }
+.places-box.full .bar-track i { background: var(--bad); }
+.alert.ok-alert { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); }
+.al-sess.freed { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); border-radius: 10px; padding: 6px 8px; }
+.al-block .al-sess.freed { border-color: var(--ok); }
+.al-freed { font-size: 12px; font-weight: 800; color: var(--ok); }
+
+/* ---------- Fenêtres : le contenu défile, les boutons du bas restent visibles ---------- */
+.modal { min-width: 0; overflow: hidden; }
+.modal-head, .modal-foot { flex-shrink: 0; }
+.modal-body { flex: 1 1 auto; min-height: 0; min-width: 0; overscroll-behavior: contain; }
+.modal-body > * { min-width: 0; max-width: 100%; }
+p.alert { display: block; }
+.al-sess { flex-wrap: wrap; }
+.al-sess-main { min-width: 150px; }
+@media (max-width: 760px) {
+  .al-sess.freed > .btn { flex: 1 1 100%; }
+  .modal-foot { gap: 6px; }
+  .modal-foot .btn { min-width: 0; }
+}
+.avstack { flex-wrap: wrap; row-gap: 2px; }
+.avs-label, .avs-more { white-space: normal; }
+.sess-row .grow { min-width: 0; }
+html, body { overflow-x: clip; max-width: 100%; }

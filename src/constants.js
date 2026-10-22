@@ -34,7 +34,7 @@ export const SESSION_FORMATS = {
 
 export const VOTE = {
   yes:   { label: 'Oui',       short: '✓', color: '#16A34A' },
-  maybe: { label: 'Si besoin', short: '~', color: '#D97706' },
+  maybe: { label: 'Peut-être', short: '?', color: '#D97706' },
   no:    { label: 'Non',       short: '✕', color: '#DC2626' },
 };
 
@@ -64,6 +64,7 @@ export const LOG_TYPES = {
   session_update: 'Séance modifiée',
   session_delete: 'Séance supprimée',
   session_join: 'Inscription séance',
+  session_wait: 'Liste d’attente',
   session_leave: 'Désinscription séance',
   invite_create: 'Code créé',
   invite_update: 'Code modifié',

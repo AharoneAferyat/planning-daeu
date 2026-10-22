@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs,
-  increment, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, updateDoc, writeBatch,
+  increment, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { DEFAULT_SETTINGS } from './config';
 import { fmt, fmtDayShort, shortUA, toDate, normalizeSlots } from './utils';
+import { splitPlaces, yesOrder } from './places';
 
 // ---------- Historique ----------
 export async function log(type, actor, target = '', details = {}) {
@@ -136,15 +137,19 @@ async function detachFromActivities(id, replaceBy = null) {
     if (!v[id]) continue;
     const upd = { [`votes.${id}`]: deleteField() };
     if (replaceBy && !v[replaceBy]) upd[`votes.${replaceBy}`] = v[id];
+    for (const [optId, q] of Object.entries(p.data().queue || {})) {
+      if (q.includes(id)) upd[`queue.${optId}`] = q.map((x) => (x === id ? replaceBy : x)).filter((x, i, a) => x && a.indexOf(x) === i);
+    }
     await updateDoc(p.ref, upd);
   }
   const sessions = await getDocs(collection(db, 'sessions'));
   for (const s of sessions.docs) {
     const att = s.data().attendees || [];
-    if (!att.includes(id)) continue;
-    let next = att.filter((x) => x !== id);
-    if (replaceBy && !next.includes(replaceBy)) next = [...next, replaceBy];
-    await updateDoc(s.ref, { attendees: next });
+    const wait = s.data().waitlist || [];
+    if (!att.includes(id) && !wait.includes(id)) continue;
+    const swap = (arr) => arr.map((x) => (x === id ? replaceBy : x)).filter((x, i, a) => x && a.indexOf(x) === i);
+    const nextAtt = swap(att);
+    await updateDoc(s.ref, { attendees: nextAtt, waitlist: swap(wait).filter((x) => !nextAtt.includes(x)) });
   }
 }
 
@@ -181,21 +186,29 @@ export async function updatePoll(id, data, actor, title) {
   await log('poll_update', actor, title, {});
 }
 export async function votePoll(poll, me, choices) {
-  await updateDoc(doc(db, 'polls', poll.id), { [`votes.${me.id}`]: choices });
-  const resume = poll.options.map((o) => `${fmtDayShort(o.date)} ${fmt(o.s)} : ${choices[o.id] === 'yes' ? 'oui' : choices[o.id] === 'maybe' ? 'si besoin' : choices[o.id] === 'no' ? 'non' : '—'}`);
+  // Les « oui » sont rangés par ordre d'arrivée (premier arrivé, premier servi)
+  const upd = { [`votes.${me.id}`]: choices };
+  for (const o of poll.options) {
+    const was = poll.votes?.[me.id]?.[o.id] === 'yes';
+    const now = choices[o.id] === 'yes';
+    if (now && !was) upd[`queue.${o.id}`] = arrayUnion(me.id);
+    if (!now && was) upd[`queue.${o.id}`] = arrayRemove(me.id);
+  }
+  await updateDoc(doc(db, 'polls', poll.id), upd);
+  const resume = poll.options.map((o) => `${fmtDayShort(o.date)} ${fmt(o.s)} : ${choices[o.id] === 'yes' ? 'oui' : choices[o.id] === 'maybe' ? 'peut-être' : choices[o.id] === 'no' ? 'non' : '—'}`);
   await log('poll_vote', `${me.prenom} ${me.nom || ''}`.trim(), poll.title, { votes: resume });
 }
 export async function closePoll(poll, option, extra, actor) {
-  const votes = poll.votes || {};
-  const attendees = Object.keys(votes).filter((pid) => votes[pid]?.[option.id] === 'yes' || votes[pid]?.[option.id] === 'maybe');
+  const max = Number(extra.max ?? poll.max) || null;
+  const { inn: attendees, wait: waitlist } = splitPlaces(yesOrder(poll, option.id), max);
   const sRef = await addDoc(collection(db, 'sessions'), {
     title: poll.title, date: option.date, s: option.s, e: option.e,
     format: extra.format || poll.format || 'hybride', place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
-    attendees, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
+    attendees, waitlist, max, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp() });
-  await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length });
+  await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
   return sRef.id;
 }
 export async function reopenPoll(poll, actor) {
@@ -221,9 +234,36 @@ export async function updateSession(id, data, actor, title) {
   await updateDoc(doc(db, 'sessions', id), { ...data, updatedAt: serverTimestamp() });
   await log('session_update', actor, title, data.date ? { date: `${fmtDayShort(data.date)} ${fmt(data.s)}–${fmt(data.e)}` } : {});
 }
+// Inscription / désinscription avec places limitées.
+// Renvoie 'in' (place obtenue), 'wait' (liste d'attente), 'freed' (place libérée) ou 'out'.
 export async function joinSession(s, me, join) {
-  await updateDoc(doc(db, 'sessions', s.id), { attendees: join ? arrayUnion(me.id) : arrayRemove(me.id) });
-  await log(join ? 'session_join' : 'session_leave', `${me.prenom} ${me.nom || ''}`.trim(), s.title, { date: `${fmtDayShort(s.date)} ${fmt(s.s)}` });
+  const ref = doc(db, 'sessions', s.id);
+  const status = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.data() || {};
+    let att = d.attendees || [];
+    let wait = d.waitlist || [];
+    const max = Number(d.max) || 0;
+    let st;
+    if (join) {
+      if (att.includes(me.id)) return 'in';
+      if (!max || att.length < max) { att = [...att, me.id]; wait = wait.filter((x) => x !== me.id); st = 'in'; }
+      else { if (!wait.includes(me.id)) wait = [...wait, me.id]; st = 'wait'; }
+    } else {
+      const wasIn = att.includes(me.id);
+      att = att.filter((x) => x !== me.id);
+      wait = wait.filter((x) => x !== me.id);
+      st = wasIn && max && wait.length ? 'freed' : 'out';
+    }
+    tx.update(ref, { attendees: att, waitlist: wait });
+    return st;
+  });
+  const who = `${me.prenom} ${me.nom || ''}`.trim();
+  const date = `${fmtDayShort(s.date)} ${fmt(s.s)}`;
+  if (status === 'in') await log('session_join', who, s.title, { date });
+  else if (status === 'wait') await log('session_wait', who, s.title, { date });
+  else await log('session_leave', who, s.title, status === 'freed' ? { date, info: 'place libérée, liste d’attente prévenue' } : { date });
+  return status;
 }
 export async function deleteSession(s, actor) {
   await deleteDoc(doc(db, 'sessions', s.id));

@@ -19,6 +19,7 @@ import PollsView, { PollForm, SessionForm, SessionSheet } from './components/Pol
 import { Avatar, Spinner, Toast } from './components/ui';
 import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
+import FormationPrompt, { needsFormationPrompt } from './components/FormationPrompt';
 import { canSee, FORMATIONS, inAudience, subjectOk } from './formations';
 import { log as logAction, updateParticipant } from './data';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
@@ -54,6 +55,7 @@ function PublicApp() {
   const [view, setView] = useState(() => ls.get('ge_view') || 'semaine');
   const [cat, setCat] = useState(() => ls.get('ge_cat') || 'all');
   const [sub, setSub] = useState(() => ls.get('ge_sub') || 'all');
+  const [promptDone, setPromptDone] = useState(false);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [highlight, setHighlight] = useState(null);
   const [weekStart, setWeekStart] = useState(() => weekStartOf(new Date()));
@@ -253,7 +255,9 @@ function PublicApp() {
         onClose={() => { setPollForm(null); setView('seances'); }} />}
       {sessionForm && <SessionForm initial={sessionForm.initial} prefill={sessionForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}
         onClose={() => setSessionForm(null)} />}
-      <AlertsPopup sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
+      {needsFormationPrompt(me) && !promptDone ? (
+        <FormationPrompt me={me} onDone={(f) => { setPromptDone(true); if (f) { setCat(f); setToast(`C'est noté : ${FORMATIONS[f].label}`); } }} />
+      ) : <AlertsPopup sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
       <Toast text={toast} onDone={clearToast} />
     </div>
   );

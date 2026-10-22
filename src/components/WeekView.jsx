@@ -59,7 +59,7 @@ export default function WeekView({ people, sessions, weekStart, setWeekStart, hi
               <b className="hm-dnum">{addDays(weekStart, d).getDate()}</b>
               <span className="hm-dcount"><Users size={10} />{nDay}</span>
               {ds.map((s) => (
-                <button key={s.id} className={'hm-sess' + ((s.attendees || []).includes(meId) ? ' in' : '')}
+                <button key={s.id} className={'hm-sess' + ((s.attendees || []).includes(meId) ? ' in' : '') + (s.cancelled ? ' cancelled' : '')}
                   onClick={() => onSession(s)} title={`${s.title} · ${fmt(s.s)}–${fmt(s.e)}`}>
                   <CalendarCheck size={11} /><span>{fmt(s.s)}</span>
                 </button>
@@ -74,7 +74,7 @@ export default function WeekView({ people, sessions, weekStart, setWeekStart, hi
             {grid[r].map((ps, d) => {
               const n = ps.length;
               const a = n / max;
-              const sess = weekSessions.some((s) => s.date === dates[d] && s.s < h + 60 && s.e > h);
+              const sess = weekSessions.some((s) => !s.cancelled && s.date === dates[d] && s.s < h + 60 && s.e > h);
               const mine = meId && ps.some((p) => p.id === meId);
               const hl = hlPerson && ps.includes(hlPerson);
               return (

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, CalendarCheck, Check, ChevronRight, Clock, EyeOff, MapPin, Vote, X } from 'lucide-react';
-import { joinSession } from '../data';
+import { cancelSession, joinSession, keepSession } from '../data';
 import { addDays, fmt, fmtDay, fmtDayShort, isPast, isoDate, ls, ss } from '../utils';
 import { AvatarStack, Modal } from './ui';
-import { placesLabel, sessionState } from '../places';
+import { decisionFor, placesLabel, sessionState } from '../places';
+import { ConfirmButton } from './ui';
 
 const readList = (k) => { try { return JSON.parse(ls.get(k) || '[]'); } catch { return []; } };
 
@@ -19,14 +20,16 @@ export function dayLabel(iso) {
 // + toujours : les séances où je suis en liste d'attente et où une place s'est libérée.
 export function sessionReminders(sessions, meId) {
   const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
-  const relevant = upcoming.filter((s) => sessionState(s, meId).status !== 'out' || s.notify !== false);
+  // séance annulée : seuls les inscrits / la liste d'attente sont prévenus
+  const relevant = upcoming.filter((s) => (s.cancelled ? sessionState(s, meId).status !== 'out' : (sessionState(s, meId).status !== 'out' || s.notify !== false)));
   const limit = isoDate(addDays(new Date(), 3));
   const soon = relevant.filter((s) => s.date <= limit);
   const base = soon.length ? soon : relevant.slice(0, 1);
-  const freed = upcoming.filter((s) => { const st = sessionState(s, meId); return st.status === 'wait' && st.free > 0; });
+  const freed = upcoming.filter((s) => { const st = sessionState(s, meId); return !s.cancelled && st.status === 'wait' && st.free > 0; });
   return [...freed, ...base.filter((s) => !freed.includes(s))];
 }
-const freedFor = (s, meId) => { const st = sessionState(s, meId); return st.status === 'wait' && st.free > 0; };
+const freedFor = (s, meId) => { const st = sessionState(s, meId); return !s.cancelled && st.status === 'wait' && st.free > 0; };
+export const decisionsFor = (sessions, meId) => sessions.filter((s) => !isPast(s.date, s.e) && decisionFor(s, meId));
 
 export function usePendingPolls(polls, meId) {
   const [hidden, setHidden] = useState(() => readList('ge_poll_hidden'));
@@ -54,24 +57,27 @@ export function usePendingPolls(polls, meId) {
 function SessionLine({ s, people, me, onOpen, compact }) {
   const att = (s.attendees || []).map((id) => people.find((p) => p.id === id)).filter(Boolean);
   const st = sessionState(s, me.id);
-  const freed = st.status === 'wait' && st.free > 0;
+  const freed = !s.cancelled && st.status === 'wait' && st.free > 0;
   const [busy, setBusy] = useState(false);
   const join = async () => { setBusy(true); await joinSession(s, me, true); setBusy(false); };
   return (
-    <div className={'al-sess' + (st.status === 'in' ? ' in' : '') + (freed ? ' freed' : '')}>
+    <div className={'al-sess' + (st.status === 'in' ? ' in' : '') + (freed ? ' freed' : '') + (s.cancelled ? ' cancelled' : '')}>
       <button className="al-sess-main" onClick={() => onOpen(s)}>
         {freed && <span className="al-freed">Une place s'est libérée !</span>}
+        {s.cancelled && <span className="al-cancel">Séance annulée</span>}
         <span className="al-day">{dayLabel(s.date)}{compact && <span className="al-time"> · {fmt(s.s)}–{fmt(s.e)}</span>}</span>
         <b>{s.title}</b>
         {!compact && <span className="muted tiny"><Clock size={12} /> {fmt(s.s)}–{fmt(s.e)}{s.place ? <> · <MapPin size={12} /> {s.place}</> : ''}</span>}
         {!compact && <AvatarStack people={att} max={6} size={22} label={placesLabel(s)} />}
       </button>
+      {s.cancelled ? null : <>
       {st.status === 'in' && <span className="pill ok"><Check size={13} /> J'y vais</span>}
       {freed && <button className={'btn small primary' + (compact ? ' al-join' : '')} disabled={busy} onClick={join}>Je prends la place</button>}
       {st.status === 'wait' && !freed && <span className="pill warn">Attente n°{st.rank}</span>}
       {st.status === 'out' && (
         <button className={'btn small ' + (st.full ? '' : 'primary') + (compact ? ' al-join' : '')} disabled={busy} onClick={join}>{st.full ? 'Liste d’attente' : 'J\'y vais'}</button>
       )}
+      </>}
     </div>
   );
 }
@@ -79,13 +85,14 @@ function SessionLine({ s, people, me, onOpen, compact }) {
 // ---------- Fenêtre affichée à l'arrivée sur le site ----------
 export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls }) {
   const reminders = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
+  const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
   const total = people.length;
-  const remKey = 'ge_rem_seen_' + reminders.map((s) => s.id + (freedFor(s, me.id) ? ':libre' : '')).join(',');
+  const remKey = 'ge_rem_seen_' + [...decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...reminders.map((s) => s.id + (freedFor(s, me.id) ? ':libre' : '') + (s.cancelled ? ':x' : ''))].join(',');
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const showRem = reminders.length > 0 && ss.get(remKey) !== '1';
+    const showRem = (reminders.length > 0 || decisions.length > 0) && ss.get(remKey) !== '1';
     const showPolls = openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     if (showRem || showPolls) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,6 +105,12 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls 
   return (
     <Modal title={<><Bell size={18} /> Rappels</>} onClose={close}
       footer={<button className="btn primary block" onClick={close}>OK</button>}>
+      {decisions.length > 0 && (
+        <section className="al-block">
+          <h4>À décider</h4>
+          {decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={(x) => { close(); onSession(x); }} />)}
+        </section>
+      )}
       {reminders.length > 0 && (
         <section className="al-block">
           <h4>{reminders.some((s) => freedFor(s, me.id)) ? 'Place libérée et séances à venir' : soon ? (reminders.length > 1 ? 'Séances des 3 prochains jours' : 'Séance à venir') : 'Prochaine séance'}</h4>
@@ -141,10 +154,12 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls 
 export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls }) {
   const reminders = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
   const [pendingPolls, , openPolls] = usePendingPolls(polls, me.id);
+  const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
-  if ((!reminders.length || closedRem) && !openPolls.length) return null;
+  if ((!reminders.length || closedRem) && !openPolls.length && !decisions.length) return null;
   return (
     <div className="al-bar">
+      {decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={onSession} />)}
       {reminders.length > 0 && !closedRem && (
         <div className="al-card al-c-sess">
           <CalendarCheck size={20} className="al-ico" />
@@ -164,6 +179,27 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls })
           <span className="al-go">{pendingPolls.length ? 'Répondre' : 'Voir'} <ChevronRight size={16} /></span>
         </button>
       )}
+    </div>
+  );
+}
+
+// ---------- Décision du créateur : on passe sous le minimum ----------
+export function DecisionCard({ s, me, onOpen }) {
+  const st = sessionState(s, me.id);
+  const actor = me.id === 'admin' ? 'Admin' : `${me.prenom} ${me.nom || ''}`.trim();
+  return (
+    <div className="al-card al-c-decision">
+      <div className="grow">
+        <span className="al-decide">Minimum pas atteint</span>
+        <button className="al-sess-main" onClick={() => onOpen(s)}>
+          <b>{s.title}</b>
+          <span className="muted tiny">{dayLabel(s.date)} · {fmt(s.s)}–{fmt(s.e)} · {st.att.length} inscrit{st.att.length > 1 ? 's' : ''} pour un minimum de {st.min}</span>
+        </button>
+        <div className="row-btns">
+          <ConfirmButton className="btn small danger" confirmText="Confirmer l'annulation" onConfirm={() => cancelSession(s, actor)}>Annuler la séance</ConfirmButton>
+          <button className="btn small primary" onClick={() => keepSession(s, actor)}>Maintenir</button>
+        </div>
+      </div>
     </div>
   );
 }

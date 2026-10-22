@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
-  closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, reopenPoll, updatePoll, updateSession, votePoll,
+  cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
@@ -79,7 +79,7 @@ function SessionRow({ s, people, me, onClick, isToday }) {
   const att = (s.attendees || []).map((id) => people.find((p) => p.id === id)).filter(Boolean);
   const inIt = me && (s.attendees || []).includes(me.id);
   return (
-    <button className={'sess-row' + (inIt ? ' in' : '') + (isToday ? ' today' : '')} onClick={onClick}>
+    <button className={'sess-row' + (inIt ? ' in' : '') + (isToday ? ' today' : '') + (s.cancelled ? ' cancelled' : '')} onClick={onClick}>
       <div className="sr-date">
         <b>{parseIso(s.date).getDate()}</b>
         <span>{parseIso(s.date).toLocaleDateString('fr-FR', { month: 'short' })}</span>
@@ -89,7 +89,9 @@ function SessionRow({ s, people, me, onClick, isToday }) {
         <div className="muted tiny">{fmtDay(s.date, { weekday: 'long' })} · {fmt(s.s)}–{fmt(s.e)} · {SESSION_FORMATS[s.format] || s.format}{s.place ? ` · ${s.place}` : ''}</div>
         <AvatarStack people={att} max={8} size={22} label={placesLabel(s)} />
       </div>
-      {inIt && <span className="pill ok"><Check size={13} /> J'y vais</span>}
+      {s.cancelled && <span className="pill bad">Annulée</span>}
+      {!s.cancelled && sessionState(s, me?.id).needsDecision && <span className="pill warn">Sous le minimum</span>}
+      {inIt && !s.cancelled && <span className="pill ok"><Check size={13} /> J'y vais</span>}
       {!inIt && me && sessionState(s, me.id).status === 'wait' && <span className="pill warn">Attente n°{sessionState(s, me.id).rank}</span>}
       {!inIt && me && sessionState(s, me.id).status === 'out' && sessionState(s, me.id).full && <span className="pill bad">Complet</span>}
     </button>
@@ -131,6 +133,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
   const deadlinePassed = poll.deadline && isPast(poll.deadline);
   const iVoted = me && poll.votes?.[me.id];
   const max = Number(poll.max) || 0;
+  const min = Number(poll.min) || 0;
 
   // Vote enregistré automatiquement à chaque clic
   const vote = async (optId, k) => {
@@ -158,7 +161,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
             {poll.deadline && <> · réponse avant le {fmtDayShort(poll.deadline)}{deadlinePassed && ' (dépassé)'}</>}
           </div>
           {poll.description && <p className="poll-desc">{poll.description}</p>}
-          <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}</div>
+          <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}{min > 0 ? ` · ${min} minimum` : ''}</div>
         </div>
         {canManage && (
           <div className="poll-tools">
@@ -199,6 +202,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
                   <span className="vc yes">{sc.yes} oui</span>
                   <span className="vc maybe">{sc.maybe} peut-être</span>
                   <span className="vc no">{sc.no} non</span>
+                  {min > 0 && <span className={'vc ' + (g.yes.length >= min ? 'minok' : 'minko')}>{g.yes.length >= min ? `min ${min} ✓` : `il manque ${min - g.yes.length} (min ${min})`}</span>}
                   {max > 0 && <span className={'vc places' + (g.yes.length >= max ? ' full' : '')}>{Math.min(g.yes.length, max)}/{max} places{g.yesWait.length ? ` · ${g.yesWait.length} en attente` : ''}</span>}
                   <span className="fc"><Clock size={12} /> {g.fc.full.length} dispo (planning)</span>
                 </div>
@@ -265,11 +269,10 @@ function ClosePollModal({ poll, scores, me, onClose }) {
   const [format, setFormat] = useState(poll.format || 'hybride');
   const [place, setPlace] = useState(poll.place || '');
   const [notify, setNotify] = useState(true);
-  const [max, setMax] = useState(poll.max || '');
   const [busy, setBusy] = useState(false);
   const go = async () => {
     setBusy(true);
-    await closePoll(poll, poll.options.find((o) => o.id === optId), { format, place, notify, max: Number(max) || null }, actorName(me));
+    await closePoll(poll, poll.options.find((o) => o.id === optId), { format, place, notify }, actorName(me));
     setBusy(false); onClose();
   };
   return (
@@ -296,7 +299,11 @@ function ClosePollModal({ poll, scores, me, onClose }) {
         </label>
         <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="BU, chez Lucas, lien Meet…" /></label>
       </div>
-      <MaxField value={max} onChange={setMax} />
+      <p className="places-fixed">
+        <b>Places :</b> {poll.max ? `${poll.max} max (fixé par le sondage : au-delà, liste d'attente)` : 'illimitées (tout le monde pourra rejoindre)'}
+        {poll.min ? <> · <b>minimum {poll.min}</b></> : ''}
+      </p>
+      {poll.min > 0 && optId && (() => { const n = yesOrder(poll, optId).length; return n < poll.min ? <p className="alert warn">Attention : seulement {n} « Oui » pour cette date, le minimum ({poll.min}) n'est pas atteint.</p> : null; })()}
       <NotifyCheck value={notify} onChange={setNotify} />
     </Modal>
   );
@@ -311,6 +318,7 @@ export function PollForm({ initial, prefill, people, me, onClose }) {
   const [place, setPlace] = useState(initial?.place || '');
   const [deadline, setDeadline] = useState(initial?.deadline || '');
   const [max, setMax] = useState(initial?.max || '');
+  const [min, setMin] = useState(initial?.min || '');
   const [options, setOptions] = useState(() => initial?.options?.map((o) => ({ ...o, sh: toHHMM(o.s), eh: toHHMM(o.e) }))
     || prefill || [{ id: uid(), date: isoDate(new Date(Date.now() + 86400000)), sh: '14:00', eh: '17:00' }]);
   const [err, setErr] = useState('');
@@ -335,8 +343,9 @@ export function PollForm({ initial, prefill, people, me, onClose }) {
       opts.push({ id: o.id, date: o.date, s, e });
     }
     if (opts.length < 1) return setErr('Ajoute au moins une date.');
+    if (Number(min) && Number(max) && Number(min) > Number(max)) return setErr('Le minimum ne peut pas dépasser le maximum.');
     opts.sort((a, b) => (a.date + a.s).localeCompare(b.date + b.s));
-    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, options: opts };
+    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, options: opts };
     setBusy(true);
     try {
       if (isEdit) await updatePoll(initial.id, data, actorName(me), data.title);
@@ -360,7 +369,7 @@ export function PollForm({ initial, prefill, people, me, onClose }) {
         <label className="field"><span>Lieu (optionnel)</span><input value={place} onChange={(e) => setPlace(e.target.value)} /></label>
         <label className="field"><span>Répondre avant le</span><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
       </div>
-      <MaxField value={max} onChange={setMax} />
+      <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} />
 
       <h3 className="fsub">Dates proposées</h3>
       <div className="opt-edit">
@@ -403,6 +412,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
     setBusy(false);
   };
   const isPerson = me && me.id !== 'admin';
+  const actor = actorName(me);
   const ics = () => {
     const d = s.date.replace(/-/g, '');
     const t = (m) => `${String(Math.floor(Math.min(m, 1439) / 60)).padStart(2, '0')}${String(Math.min(m, 1439) % 60).padStart(2, '0')}00`;
@@ -416,14 +426,16 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
   return (
     <Modal title={s.title} onClose={onClose}
       footer={<>
-        {canManage && <ConfirmButton confirmText="Supprimer la séance ?" onConfirm={async () => { await deleteSession(s, actorName(me)); onClose(); }}><Trash2 size={16} /></ConfirmButton>}
+        {canManage && <ConfirmButton confirmText="Supprimer la séance ?" onConfirm={async () => { await deleteSession(s, actor); onClose(); }}><Trash2 size={16} /></ConfirmButton>}
+        {canManage && !st.cancelled && !st.needsDecision && <ConfirmButton className="btn ghost danger" confirmText="Annuler la séance ?" onConfirm={() => cancelSession(s, actor)}>Annuler</ConfirmButton>}
+        {canManage && st.cancelled && <button className="btn ghost" onClick={() => cancelSession(s, actor, false)}>Rétablir</button>}
         {canManage && <button className="btn ghost" onClick={onEdit}><Pencil size={16} /> Modifier</button>}
         <button className="btn ghost" onClick={ics} title="Ajouter à mon agenda"><CalendarPlus size={16} /></button>
         <span className="grow" />
-        {isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => act(false)}>Je ne suis plus dispo</button>}
-        {isPerson && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}
-        {isPerson && st.status === 'wait' && <button className="btn ghost" disabled={busy} onClick={() => act(false)}>Quitter l'attente</button>}
-        {isPerson && st.status === 'out' && <button className="btn primary" disabled={busy} onClick={() => act(true)}>{st.full ? 'Liste d’attente' : <><Check size={16} /> J'y vais</>}</button>}
+        {!st.cancelled && isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => act(false)}>Je ne suis plus dispo</button>}
+        {!st.cancelled && isPerson && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}
+        {!st.cancelled && isPerson && st.status === 'wait' && <button className="btn ghost" disabled={busy} onClick={() => act(false)}>Quitter l'attente</button>}
+        {!st.cancelled && isPerson && st.status === 'out' && <button className="btn primary" disabled={busy} onClick={() => act(true)}>{st.full ? 'Liste d’attente' : <><Check size={16} /> J'y vais</>}</button>}
       </>}>
       <div className="sess-info">
         <p><CalendarCheck size={16} /> <b>{fmtDay(s.date)}</b> · {fmt(s.s)} – {fmt(s.e)}</p>
@@ -432,11 +444,24 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
         {s.note && <p className="muted">{s.note}</p>}
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
+      {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}.</p>}
+      {canManage && st.needsDecision && (
+        <div className="decision">
+          <p><b>Minimum pas atteint :</b> {att.length} inscrit{att.length > 1 ? 's' : ''} pour un minimum de {st.min}. Tu maintiens la séance ?</p>
+          <div className="row-btns">
+            <ConfirmButton className="btn danger" confirmText="Confirmer l'annulation" onConfirm={() => cancelSession(s, actor)}>Annuler la séance</ConfirmButton>
+            <button className="btn primary" onClick={() => keepSession(s, actor)}>Maintenir</button>
+          </div>
+        </div>
+      )}
+      {st.min > 0 && !st.max && (
+        <p className={'places-fixed' + (st.missing ? ' ko' : '')}>{st.missing ? `Il manque ${st.missing} personne${st.missing > 1 ? 's' : ''} (minimum ${st.min})` : `Minimum de ${st.min} atteint ✓`}</p>
+      )}
       {st.max > 0 && (
         <div className={'places-box' + (st.full ? ' full' : '')}>
           <b>{att.length}/{st.max} places</b>
           <span className="bar-track"><i style={{ width: `${Math.min(100, (att.length / st.max) * 100)}%` }} /></span>
-          <span className="muted tiny">{st.full ? 'Complet' : `${st.free} place${st.free > 1 ? 's' : ''} libre${st.free > 1 ? 's' : ''}`}{waiting.length ? ` · ${waiting.length} en attente` : ''}</span>
+          <span className="muted tiny">{st.full ? 'Complet' : `${st.free} place${st.free > 1 ? 's' : ''} libre${st.free > 1 ? 's' : ''}`}{waiting.length ? ` · ${waiting.length} en attente` : ''}{st.min ? (st.missing ? ` · il en manque ${st.missing} (min ${st.min})` : ` · min ${st.min} ✓`) : ''}</span>
         </div>
       )}
       {isPerson && st.status === 'wait' && (
@@ -466,6 +491,8 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
   const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
   const [notify, setNotify] = useState(base.notify !== false);
   const [max, setMax] = useState(base.max || '');
+  const [min, setMin] = useState(base.min || '');
+  const maxLocked = !!(isEdit && initial.pollId && initial.max && me?.id !== 'admin');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const s = toMin(sh), e0 = toMin(eh);
@@ -478,10 +505,11 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
     if (!title.trim() || !date || s === null || e === null) return setErr('Titre, date et horaires obligatoires.');
     if (e <= s) return setErr('La fin doit être après le début.');
     const m = Number(max) || null;
+    if (Number(min) && m && Number(min) > m) return setErr('Le minimum ne peut pas dépasser le maximum.');
     let att = [...attendees];
     let wait = (base.waitlist || []).filter((x) => !att.includes(x));
     if (m && att.length > m) { wait = [...att.slice(m), ...wait]; att = att.slice(0, m); }
-    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, notify };
+    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify };
     setBusy(true);
     try {
       if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
@@ -509,7 +537,7 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
         <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>
       </div>
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
-      <MaxField value={max} onChange={setMax} />
+      <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />
       <NotifyCheck value={notify} onChange={setNotify} />
       <h3 className="fsub">Participants ({attendees.length}{Number(max) ? `/${max}` : ''})</h3>
       {Number(max) > 0 && attendees.length > Number(max) && <p className="muted tiny">Au-delà de {max}, les derniers ajoutés passeront en liste d'attente.</p>}
@@ -541,12 +569,21 @@ function NotifyCheck({ value, onChange }) {
   );
 }
 
-function MaxField({ value, onChange }) {
+function PlacesFields({ max, setMax, min, setMin, maxLocked }) {
   return (
-    <label className="field narrow">
-      <span>Nombre de places max (vide = illimité)</span>
-      <input type="number" min={1} inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Illimité" />
-      <small className="muted">Premier arrivé, premier servi. Au-delà : liste d'attente. Si quelqu'un se retire, la liste d'attente est prévenue et le premier qui accepte prend la place.</small>
-    </label>
+    <div className="places-fields">
+      <div className="grid2">
+        <label className="field"><span>Places max (vide = illimité)</span>
+          <input type="number" min={1} inputMode="numeric" value={max} disabled={maxLocked} onChange={(e) => setMax(e.target.value)} placeholder="Illimité" />
+        </label>
+        <label className="field"><span>Minimum (vide = aucun)</span>
+          <input type="number" min={1} inputMode="numeric" value={min} onChange={(e) => setMin(e.target.value)} placeholder="Aucun" />
+        </label>
+      </div>
+      <small className="muted">
+        {maxLocked ? 'Le nombre de places est fixé par le sondage. ' : ''}
+        Max : premier arrivé, premier servi, puis liste d'attente. Min : si quelqu'un se désiste et qu'on passe en dessous, le créateur de la séance est prévenu pour décider d'annuler ou de maintenir.
+      </small>
+    </div>
   );
 }

@@ -199,13 +199,14 @@ export async function votePoll(poll, me, choices) {
   await log('poll_vote', `${me.prenom} ${me.nom || ''}`.trim(), poll.title, { votes: resume });
 }
 export async function closePoll(poll, option, extra, actor) {
-  const max = Number(extra.max ?? poll.max) || null;
+  const max = Number(poll.max) || null; // fixé par le sondage
+  const min = Number(poll.min) || null;
   const { inn: attendees, wait: waitlist } = splitPlaces(yesOrder(poll, option.id), max);
   const sRef = await addDoc(collection(db, 'sessions'), {
     title: poll.title, date: option.date, s: option.s, e: option.e,
     format: extra.format || poll.format || 'hybride', place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
-    attendees, waitlist, max, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
+    attendees, waitlist, max, min, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp() });
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
@@ -244,6 +245,7 @@ export async function joinSession(s, me, join) {
     let att = d.attendees || [];
     let wait = d.waitlist || [];
     const max = Number(d.max) || 0;
+    if (d.cancelled && join) return 'cancelled';
     let st;
     if (join) {
       if (att.includes(me.id)) return 'in';
@@ -258,12 +260,23 @@ export async function joinSession(s, me, join) {
     tx.update(ref, { attendees: att, waitlist: wait });
     return st;
   });
+  if (status === 'cancelled') return status;
   const who = `${me.prenom} ${me.nom || ''}`.trim();
   const date = `${fmtDayShort(s.date)} ${fmt(s.s)}`;
   if (status === 'in') await log('session_join', who, s.title, { date });
   else if (status === 'wait') await log('session_wait', who, s.title, { date });
   else await log('session_leave', who, s.title, status === 'freed' ? { date, info: 'place libérée, liste d’attente prévenue' } : { date });
   return status;
+}
+// Annuler / rétablir / maintenir malgré le minimum
+export async function cancelSession(s, actor, cancel = true) {
+  await updateDoc(doc(db, 'sessions', s.id), cancel ? { cancelled: true, cancelledAt: serverTimestamp(), cancelledBy: actor } : { cancelled: false });
+  await log(cancel ? 'session_cancel' : 'session_restore', actor, s.title, { date: `${fmtDayShort(s.date)} ${fmt(s.s)}`, inscrits: (s.attendees || []).length });
+}
+export async function keepSession(s, actor) {
+  const n = (s.attendees || []).length;
+  await updateDoc(doc(db, 'sessions', s.id), { minAck: n });
+  await log('session_keep', actor, s.title, { inscrits: n, minimum: s.min });
 }
 export async function deleteSession(s, actor) {
   await deleteDoc(doc(db, 'sessions', s.id));

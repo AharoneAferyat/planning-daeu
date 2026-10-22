@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, CalendarCheck, Clock, Ticket, Users, Vote } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, LOG_TYPES, MOMENTS } from '../constants';
 import { inviteStatus } from '../data';
+import { DecisionCard, decisionsFor } from '../components/Alerts';
+import { ADMIN_ME } from '../config';
 import { bestSlots, duplicatePairs, fmt, fmtDur, isPast, timeAgo, toDate, totalMinutes } from '../utils';
 import { Avatar, AvatarStack, PeopleModal } from '../components/ui';
 
@@ -47,6 +49,8 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
         <button className="kpi" onClick={() => go('logs')}><Clock size={20} /><b>{changes7}</b><span>modifs (7 j)</span></button>
         <div className="kpi"><Clock size={20} /><b>{fmtDur(Math.round(avgH))}</b><span>dispo moy. / sem</span></div>
       </div>
+
+      {decisionsFor(sessions, 'admin').map((s) => <DecisionCard key={s.id} s={s} me={ADMIN_ME} onOpen={() => go('sessions')} />)}
 
       {dups.length > 0 && (
         <div className="alert warn clickable" onClick={() => go('people')}>

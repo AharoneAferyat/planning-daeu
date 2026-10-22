@@ -724,3 +724,22 @@ p.alert { display: block; }
 html, body { overflow-x: clip; max-width: 100%; }
 .vote-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); flex: 1 1 200px; }
 .vote-status.ok { color: var(--ok); font-weight: 700; }
+
+/* ---------- Minimum / annulation ---------- */
+.vc.minok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.vc.minko { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.places-fixed { margin: 6px 0 12px; padding: 9px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13.5px; }
+.places-fixed.ko { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); }
+.places-fields { margin-bottom: 14px; }
+.places-fields .field { margin-bottom: 6px; }
+.alert.danger-alert { background: color-mix(in srgb, var(--bad) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
+.decision { padding: 12px; border-radius: 12px; margin: 6px 0 12px; background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.decision p { margin: 0 0 4px; }
+.al-card.al-c-decision { border-left: 4px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.al-decide { font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: var(--warn); letter-spacing: .03em; }
+.al-cancel { font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: var(--bad); }
+.al-sess.cancelled b { text-decoration: line-through; opacity: .7; }
+.sess-row.cancelled { opacity: .65; }
+.sess-row.cancelled strong { text-decoration: line-through; }
+.hm-sess.cancelled { background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
+.btn.small.danger { color: var(--bad); }

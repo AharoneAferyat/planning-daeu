@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, CalendarCheck, Clock, Ticket, Users, Vote } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, LOG_TYPES, MOMENTS } from '../constants';
 import { inviteStatus } from '../data';
 import { bestSlots, duplicatePairs, fmt, fmtDur, isPast, timeAgo, toDate, totalMinutes } from '../utils';
-import { Avatar } from '../components/ui';
+import { Avatar, AvatarStack, PeopleModal } from '../components/ui';
 
 function Bars({ title, rows }) {
   const max = Math.max(1, ...rows.map((r) => r.n));
@@ -34,6 +34,7 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const avgH = people.length ? people.reduce((a, p) => a + totalMinutes(p), 0) / people.length : 0;
   const perDay = DAYS.map((d, i) => ({ label: d, n: people.filter((p) => p.slots?.some((s) => s.d === i)).length }));
+  const [openSlot, setOpenSlot] = useState(null);
   const inactive = people.filter((p) => (toDate(p.updatedAt)?.getTime() || 0) < Date.now() - 30 * 86400000);
 
   return (
@@ -56,13 +57,18 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
       <div className="dash-grid">
         <div className="card">
           <h4 className="card-title">Meilleurs créneaux communs</h4>
-          {top.length === 0 ? <p className="muted">Pas encore assez de monde.</p> : top.map((x, i) => (
-            <div key={i} className="top-slot">
-              <b>{DAYS[x.d]} {fmt(x.s)}–{fmt(x.e)}</b>
-              <span className="av-stack">{x.ids.map((id) => byId[id] && <Avatar key={id} p={byId[id]} size={22} />)}</span>
-              <span className="muted">{x.ids.length} pers.</span>
-            </div>
-          ))}
+          {top.length === 0 ? <p className="muted">Pas encore assez de monde.</p> : top.map((x, i) => {
+            const ps = x.ids.map((id) => byId[id]).filter(Boolean);
+            return (
+              <button key={i} className="top-slot" onClick={() => setOpenSlot({ ...x, ps })}>
+                <span className="ts-count">{ps.length}</span>
+                <span className="ts-main">
+                  <b>{DAYS[x.d]} {fmt(x.s)}–{fmt(x.e)}</b>
+                  <AvatarStack people={ps} max={6} size={22} />
+                </span>
+              </button>
+            );
+          })}
         </div>
         <div className="card">
           <h4 className="card-title">Activité récente</h4>
@@ -86,6 +92,8 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
             : inactive.map((p) => <div key={p.id} className="mini-log"><Avatar p={p} size={22} /><span className="grow">{p.prenom} {p.nom}</span><span className="muted tiny">{timeAgo(p.updatedAt)}</span></div>)}
         </div>
       </div>
+      {openSlot && <PeopleModal title={`${DAYS[openSlot.d]} · ${fmt(openSlot.s)}–${fmt(openSlot.e)}`} onClose={() => setOpenSlot(null)}
+        groups={[{ label: 'Dispo sur tout le créneau', color: '#16A34A', people: openSlot.ps }]} />}
     </div>
   );
 }

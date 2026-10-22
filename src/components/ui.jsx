@@ -35,6 +35,62 @@ export function Avatar({ p, size = 32, ring }) {
   );
 }
 
+// Pile d'avatars compacte : les N premiers puis « +X ». Cliquable si onClick.
+export function AvatarStack({ people, max = 6, size = 26, onClick, label }) {
+  const shown = people.slice(0, max);
+  const rest = people.length - shown.length;
+  const inner = (
+    <>
+      <span className="avs">{shown.map((p) => <Avatar key={p.id} p={p} size={size} />)}</span>
+      {rest > 0 && <span className="avs-more">+{rest}</span>}
+      {label && <span className="avs-label">{label}</span>}
+    </>
+  );
+  if (!onClick) return <span className="avstack">{inner}</span>;
+  return (
+    <button type="button" className="avstack clickable" onClick={(e) => { e.stopPropagation(); onClick(); }}>
+      {inner}
+    </button>
+  );
+}
+
+// Liste de personnes groupées (Oui / Si besoin / …)
+export function PeopleGroups({ groups, meId }) {
+  return (
+    <div className="pgroups">
+      {groups.filter((g) => g.people.length || g.showEmpty).map((g) => (
+        <section key={g.label} className="pgroup" style={g.color ? { '--c': g.color } : undefined}>
+          <h4><span className="pg-dot" />{g.label} <span className="pg-count">{g.people.length}</span></h4>
+          {g.hint && <p className="muted tiny">{g.hint}</p>}
+          {g.people.length === 0 ? <p className="muted tiny">Personne</p> : (
+            <div className="pg-list">
+              {g.people.map((p) => (
+                <div key={p.id} className="pg-row">
+                  <Avatar p={p} size={30} />
+                  <div className="grow">
+                    <Name p={p} meId={meId} full />
+                    {g.extra && <div className="muted tiny">{g.extra(p)}</div>}
+                  </div>
+                  <PersonBadges p={p} compact />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+export function PeopleModal({ title, subtitle, groups, meId, onClose, footer }) {
+  return (
+    <Modal title={title} onClose={onClose} footer={footer}>
+      {subtitle && <p className="muted modal-sub">{subtitle}</p>}
+      <PeopleGroups groups={groups} meId={meId} />
+    </Modal>
+  );
+}
+
 export function Name({ p, meId, full }) {
   return (
     <span className="pname">

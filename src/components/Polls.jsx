@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
-  CalendarCheck, CalendarPlus, Check, ChevronDown, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
+  Bell, CalendarCheck, CalendarPlus, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
 } from 'lucide-react';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
   closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
-import { Avatar, ConfirmButton, Empty, Modal } from './ui';
+import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
 
@@ -28,7 +28,7 @@ function scoreOf(poll, optId) {
 }
 
 // =================== Vue principale ===================
-export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm }) {
+export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm, onPollTouched }) {
   const [showPast, setShowPast] = useState(false);
   const today = isoDate(new Date());
   const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
@@ -52,7 +52,7 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
 
       <h3 className="sec-title"><Vote size={18} /> Sondages en cours</h3>
       {open.length === 0 ? <Empty icon={Vote} title="Aucun sondage en cours">Propose quelques dates et laisse chacun voter.</Empty>
-        : open.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} onEdit={() => openPollForm(p)} />)}
+        : open.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} onEdit={() => openPollForm(p)} onTouched={onPollTouched} />)}
 
       {closed.length > 0 && (
         <>
@@ -86,7 +86,7 @@ function SessionRow({ s, people, me, onClick, isToday }) {
       <div className="grow">
         <strong>{s.title}</strong>
         <div className="muted tiny">{fmtDay(s.date, { weekday: 'long' })} · {fmt(s.s)}–{fmt(s.e)} · {SESSION_FORMATS[s.format] || s.format}{s.place ? ` · ${s.place}` : ''}</div>
-        <div className="av-stack">{att.slice(0, 8).map((p) => <Avatar key={p.id} p={p} size={22} />)}{att.length > 8 && <span className="more">+{att.length - 8}</span>}</div>
+        <AvatarStack people={att} max={8} size={22} label={`${att.length} inscrit${att.length > 1 ? 's' : ''}`} />
       </div>
       {inIt && <span className="pill ok"><Check size={13} /> J'y vais</span>}
     </button>
@@ -94,36 +94,58 @@ function SessionRow({ s, people, me, onClick, isToday }) {
 }
 
 // =================== Carte de sondage ===================
-function PollCard({ poll, people, me, isAdmin, onEdit, onSession }) {
+function optionGroups(poll, o, people) {
+  const v = poll.votes || {};
+  const by = (k) => people.filter((p) => v[p.id]?.[o.id] === k);
+  const answered = new Set([...by('yes'), ...by('maybe'), ...by('no')].map((p) => p.id));
+  const fc = forecast(people, o.date, o.s, o.e);
+  const noAnswer = people.filter((p) => !answered.has(p.id));
+  return {
+    yes: by('yes'), maybe: by('maybe'), no: by('no'), fc,
+    pendingDispo: noAnswer.filter((p) => fc.full.includes(p)),
+    pendingOther: noAnswer.filter((p) => !fc.full.includes(p)),
+  };
+}
+
+function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched }) {
   const closed = poll.status === 'closed';
   const myVotes = (me && poll.votes?.[me.id]) || {};
   const [draft, setDraft] = useState(myVotes);
   const [busy, setBusy] = useState(false);
   const [closing, setClosing] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [detail, setDetail] = useState(null); // option
+  const [votersOpen, setVotersOpen] = useState(false);
   const canManage = isAdmin || (me && poll.createdBy === me.id);
+  const canVote = !closed && me && me.id !== 'admin';
   const voters = Object.keys(poll.votes || {}).map((id) => people.find((p) => p.id === id)).filter(Boolean);
+  const notVoted = people.filter((p) => !poll.votes?.[p.id]);
   const scores = Object.fromEntries(poll.options.map((o) => [o.id, scoreOf(poll, o.id)]));
   const best = Math.max(0, ...Object.values(scores).map((s) => s.score));
   const norm = (o) => JSON.stringify(Object.fromEntries(Object.entries(o).filter(([, v]) => v).sort()));
   const dirty = norm(draft) !== norm(myVotes);
   const deadlinePassed = poll.deadline && isPast(poll.deadline);
+  const iVoted = me && poll.votes?.[me.id];
 
   const save = async () => {
     setBusy(true);
     const clean = Object.fromEntries(Object.entries(draft).filter(([, v]) => v));
     await votePoll(poll, me, clean);
     setDraft(clean);
+    onTouched?.(poll.id);
     setBusy(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
+  const detailData = detail && optionGroups(poll, detail, people);
+
   return (
-    <div className={'card poll' + (closed ? ' closed' : '')}>
+    <div className={'card poll' + (closed ? ' closed' : '') + (canVote && !iVoted ? ' todo' : '')} id={`poll-${poll.id}`}>
       <div className="poll-head">
         <div className="grow">
+          {canVote && !iVoted && <span className="pill warn todo-pill">À toi de voter</span>}
           <h4>{poll.title}</h4>
           <div className="muted tiny">
-            par {poll.createdByName} · {timeAgo(poll.createdAt)} · {voters.length} vote{voters.length > 1 ? 's' : ''}
+            par {poll.createdByName} · {timeAgo(poll.createdAt)}
             {poll.deadline && <> · réponse avant le {fmtDayShort(poll.deadline)}{deadlinePassed && ' (dépassé)'}</>}
           </div>
           {poll.description && <p className="poll-desc">{poll.description}</p>}
@@ -137,34 +159,42 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession }) {
         )}
       </div>
 
+      <button className="voters-line" onClick={() => setVotersOpen(true)}>
+        <AvatarStack people={voters} max={8} size={24} />
+        <span><b>{voters.length}</b> {voters.length > 1 ? 'ont voté' : 'a voté'}{notVoted.length > 0 && <> · <b>{notVoted.length}</b> pas encore</>}</span>
+        <ChevronRight size={16} />
+      </button>
+
       <div className="opts">
         {poll.options.map((o) => {
           const sc = scores[o.id];
-          const fc = forecast(people, o.date, o.s, o.e);
+          const g = optionGroups(poll, o, people);
           const isFinal = closed && poll.finalOptionId === o.id;
           const isBest = !closed && sc.score > 0 && sc.score === best;
-          const who = (k) => voters.filter((p) => poll.votes[p.id]?.[o.id] === k);
+          const total = Math.max(1, sc.yes + sc.maybe + sc.no);
           return (
             <div key={o.id} className={'opt' + (isFinal ? ' final' : '') + (isBest ? ' best' : '') + (closed && !isFinal ? ' faded' : '')}>
-              <div className="opt-when">
-                {(isFinal || isBest) && <Trophy size={15} className="trophy" />}
-                <b>{fmtDay(o.date, { weekday: 'short', day: 'numeric', month: 'short' })}</b>
-                <span>{fmt(o.s)}–{fmt(o.e)}</span>
-                <span className="fc" title={`D'après le planning : ${fc.full.map((p) => p.prenom).join(', ') || 'personne'}`}>
-                  <Clock size={12} /> {fc.full.length} dispo{fc.full.length > 1 ? 's' : ''} (planning)
-                </span>
-              </div>
-              <div className="opt-count">
-                <span className="vc yes">{sc.yes} ✓</span>
-                <span className="vc maybe">{sc.maybe} ~</span>
-                <span className="vc no">{sc.no} ✕</span>
-              </div>
-              <div className="opt-who">
-                {['yes', 'maybe'].map((k) => who(k).map((p) => (
-                  <span key={k + p.id} className={'vote-av ' + k} title={`${p.prenom} : ${VOTE[k].label}`}><Avatar p={p} size={22} /></span>
-                )))}
-              </div>
-              {!closed && me && me.id !== 'admin' && (
+              <button className="opt-main" onClick={() => setDetail(o)}>
+                <div className="opt-when">
+                  {(isFinal || isBest) && <Trophy size={16} className="trophy" />}
+                  <b>{fmtDay(o.date, { weekday: 'short', day: 'numeric', month: 'short' })}</b>
+                  <span className="opt-time">{fmt(o.s)}–{fmt(o.e)}</span>
+                  <ChevronRight size={16} className="opt-chev" />
+                </div>
+                <div className="opt-bar" title={`${sc.yes} oui · ${sc.maybe} si besoin · ${sc.no} non`}>
+                  <i className="yes" style={{ width: `${(sc.yes / total) * 100}%` }} />
+                  <i className="maybe" style={{ width: `${(sc.maybe / total) * 100}%` }} />
+                  <i className="no" style={{ width: `${(sc.no / total) * 100}%` }} />
+                </div>
+                <div className="opt-stats">
+                  <span className="vc yes">{sc.yes} oui</span>
+                  <span className="vc maybe">{sc.maybe} si besoin</span>
+                  <span className="vc no">{sc.no} non</span>
+                  <span className="fc"><Clock size={12} /> {g.fc.full.length} dispo (planning)</span>
+                </div>
+                {g.yes.length + g.maybe.length > 0 && <AvatarStack people={[...g.yes, ...g.maybe]} max={8} size={24} />}
+              </button>
+              {canVote && (
                 <div className="vote-btns">
                   {Object.entries(VOTE).map(([k, v]) => (
                     <button key={k} className={'vb ' + k + (draft[o.id] === k ? ' on' : '')}
@@ -178,17 +208,36 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession }) {
       </div>
 
       <div className="poll-foot">
-        {!closed && me && me.id !== 'admin' && (
+        {canVote && (
           <button className="btn primary" disabled={!dirty || busy} onClick={save}>
-            {busy ? 'Envoi…' : saved ? <><Check size={16} /> Vote enregistré</> : Object.keys(myVotes).length ? 'Mettre à jour mon vote' : 'Envoyer mon vote'}
+            {busy ? 'Envoi…' : saved ? <><Check size={16} /> Vote enregistré</> : iVoted ? 'Mettre à jour mon vote' : 'Envoyer mon vote'}
           </button>
         )}
         <span className="grow" />
-        {!closed && canManage && <button className="btn" onClick={() => setClosing(true)}><Lock size={16} /> Clôturer et choisir la date</button>}
+        {!closed && canManage && <button className="btn" onClick={() => setClosing(true)}><Lock size={16} /> Clôturer</button>}
         {closed && <button className="btn small" onClick={onSession}><CalendarCheck size={15} /> Voir la séance</button>}
         {closed && canManage && <ConfirmButton className="btn small ghost" confirmText="Rouvrir (supprime la séance) ?" onConfirm={() => reopenPoll(poll, actorName(me))}><RotateCcw size={15} /> Rouvrir</ConfirmButton>}
       </div>
 
+      {detail && (
+        <PeopleModal meId={me?.id} onClose={() => setDetail(null)}
+          title={`${fmtDay(detail.date, { weekday: 'long', day: 'numeric', month: 'short' })} · ${fmt(detail.s)}–${fmt(detail.e)}`}
+          subtitle={poll.title}
+          groups={[
+            { label: 'Oui', color: VOTE.yes.color, people: detailData.yes, showEmpty: true },
+            { label: 'Si besoin', color: VOTE.maybe.color, people: detailData.maybe },
+            { label: 'Non', color: VOTE.no.color, people: detailData.no },
+            { label: 'Pas répondu — mais dispo d’après le planning', color: '#4F46E5', people: detailData.pendingDispo },
+            { label: 'Pas répondu', color: '#9CA3AF', people: detailData.pendingOther },
+          ]} />
+      )}
+      {votersOpen && (
+        <PeopleModal meId={me?.id} onClose={() => setVotersOpen(false)} title="Participation au sondage" subtitle={poll.title}
+          groups={[
+            { label: 'Ont voté', color: '#16A34A', people: voters, showEmpty: true },
+            { label: 'Pas encore voté', color: '#9CA3AF', people: notVoted },
+          ]} />
+      )}
       {closing && <ClosePollModal poll={poll} scores={scores} me={me} onClose={() => setClosing(false)} />}
     </div>
   );
@@ -199,10 +248,11 @@ function ClosePollModal({ poll, scores, me, onClose }) {
   const [optId, setOptId] = useState(sorted[0]?.id);
   const [format, setFormat] = useState(poll.format || 'hybride');
   const [place, setPlace] = useState(poll.place || '');
+  const [notify, setNotify] = useState(true);
   const [busy, setBusy] = useState(false);
   const go = async () => {
     setBusy(true);
-    await closePoll(poll, poll.options.find((o) => o.id === optId), { format, place }, actorName(me));
+    await closePoll(poll, poll.options.find((o) => o.id === optId), { format, place, notify }, actorName(me));
     setBusy(false); onClose();
   };
   return (
@@ -229,6 +279,7 @@ function ClosePollModal({ poll, scores, me, onClose }) {
         </label>
         <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="BU, chez Lucas, lien Meet…" /></label>
       </div>
+      <NotifyCheck value={notify} onChange={setNotify} />
     </Modal>
   );
 }
@@ -349,8 +400,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
         {s.note && <p className="muted">{s.note}</p>}
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
-      <h3 className="fsub">{att.length} participant{att.length > 1 ? 's' : ''}</h3>
-      <div className="who-wrap">{att.map((p) => <span key={p.id} className="who-chip"><Avatar p={p} size={24} />{p.prenom} {p.nom}</span>)}</div>
+      <PeopleGroups meId={me?.id} groups={[{ label: 'Participants', color: '#16A34A', people: att, showEmpty: true }]} />
     </Modal>
   );
 }
@@ -366,6 +416,7 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
   const [place, setPlace] = useState(base.place || '');
   const [note, setNote] = useState(base.note || '');
   const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
+  const [notify, setNotify] = useState(base.notify !== false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const s = toMin(sh), e0 = toMin(eh);
@@ -377,7 +428,7 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
     if (e === 0 || e === 1439) e = 1440;
     if (!title.trim() || !date || s === null || e === null) return setErr('Titre, date et horaires obligatoires.');
     if (e <= s) return setErr('La fin doit être après le début.');
-    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees };
+    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees, notify };
     setBusy(true);
     try {
       if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
@@ -405,7 +456,8 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
         <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>
       </div>
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
-      <h3 className="fsub">Participants</h3>
+      <NotifyCheck value={notify} onChange={setNotify} />
+      <h3 className="fsub">Participants ({attendees.length})</h3>
       {fc && <p className="muted tiny">D'après le planning : {fc.full.length} dispo{fc.full.length > 1 ? 's' : ''} sur tout le créneau{fc.part.length ? `, ${fc.part.length} en partie` : ''}. Ils sont surlignés.</p>}
       <div className="who-wrap">
         {people.map((p) => {
@@ -421,5 +473,15 @@ export function SessionForm({ initial, prefill, people, me, onClose }) {
       </div>
       {err && <p className="err">{err}</p>}
     </Modal>
+  );
+}
+
+function NotifyCheck({ value, onChange }) {
+  return (
+    <label className="switch notify-check">
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <span><b><Bell size={14} /> Prévenir tout le monde</b><br />
+        <small className="muted">Un rappel s'affichera à tous les inscrits à l'ouverture du site (dans les 3 jours avant la séance). Décoché : seuls les participants sont prévenus.</small></span>
+    </label>
   );
 }

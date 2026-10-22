@@ -3,13 +3,14 @@ import QRCode from 'qrcode';
 import { Copy, Download, Pencil, Plus, Power, QrCode, RotateCcw, Trash2, Zap } from 'lucide-react';
 import { deleteInvite, inviteStatus, resetInviteUses, saveInvite, setInviteActive } from '../data';
 import { fmtDate, isoDate, randomCode, timeAgo, toDate } from '../utils';
-import { Avatar, ConfirmButton, Empty, Modal, Toast } from '../components/ui';
+import { AvatarStack, ConfirmButton, Empty, Modal, PeopleModal, Toast } from '../components/ui';
 
 const linkFor = (code) => `${window.location.origin}/?code=${code}`;
 
 export default function AdminInvites({ invites, people }) {
   const [form, setForm] = useState(null); // 'new' | invite
   const [qr, setQr] = useState(null);
+  const [joinedOpen, setJoinedOpen] = useState(null);
   const [toast, setToast] = useState('');
 
   const quickOpen = async () => {
@@ -54,7 +55,7 @@ export default function AdminInvites({ invites, people }) {
                 </div>
                 {joined.length > 0 && (
                   <div className="inv-joined"><em>Inscrits via ce code :</em>
-                    <div className="who-wrap">{joined.map((p) => <span key={p.id} className="who-chip"><Avatar p={p} size={20} />{p.prenom} {p.nom}</span>)}</div>
+                    <AvatarStack people={joined} max={8} size={24} label={`${joined.length} — voir`} onClick={() => setJoinedOpen({ code: inv.code, people: joined })} />
                   </div>
                 )}
                 <div className="inv-actions">
@@ -72,6 +73,8 @@ export default function AdminInvites({ invites, people }) {
       )}
       {form && <InviteForm inv={form === 'new' ? null : form} people={people} onClose={() => setForm(null)} />}
       {qr && <QrModal inv={qr} onClose={() => setQr(null)} onCopy={() => copy(qr.code)} />}
+      {joinedOpen && <PeopleModal title={`Inscrits via ${joinedOpen.code}`} onClose={() => setJoinedOpen(null)}
+        groups={[{ label: 'Inscrits', color: '#16A34A', people: joinedOpen.people }]} />}
       <Toast text={toast} onDone={() => setToast('')} />
     </div>
   );

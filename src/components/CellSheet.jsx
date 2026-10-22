@@ -1,37 +1,38 @@
 import { CalendarPlus, UserX } from 'lucide-react';
 import { DAYS } from '../constants';
-import { availAt, compat, compatText, fmt, slotsOf } from '../utils';
-import { Avatar, Empty, Modal, Name, PersonBadges } from './ui';
+import { compat, compatText, fmt, fmtDay, slotsOf } from '../utils';
+import { Empty, Modal, PeopleGroups } from './ui';
+import { fullAt } from './WeekView';
 
+// Fenêtre « qui est dispo » pour une case du planning (jour + plage horaire)
 export default function CellSheet({ cell, people, meId, onClose, onPlan }) {
-  const { d, t } = cell;
-  const avail = people.filter((p) => availAt(p, d, t));
-  const c = avail.length > 1 ? compat(avail) : null;
+  const { d, s, e, date } = cell;
+  const full = people.filter((p) => fullAt(p, d, s, e));
+  const partial = people.filter((p) => !full.includes(p) && slotsOf(p, d).some((x) => x.s < e && x.e > s));
+  const c = full.length > 1 ? compat(full) : null;
+  const times = (p) => slotsOf(p, d).filter((x) => x.s < e + 120 && x.e > s - 120).map((x) => `${fmt(x.s)}–${fmt(x.e)}`).join(' · ');
+
+  // Plage commune la plus large autour de la case pour les dispos complets
+  let ps = s, pe = e;
+  if (full.length) {
+    const cover = full.map((p) => slotsOf(p, d).find((x) => x.s <= s && x.e >= e));
+    ps = Math.max(...cover.map((x) => x.s));
+    pe = Math.min(...cover.map((x) => x.e));
+  }
+
   return (
-    <Modal title={`${DAYS[d]} · ${fmt(t)}–${fmt(t + 30)}`} onClose={onClose}
-      footer={avail.length > 1 && (
-        <button className="btn primary" onClick={() => onPlan({ d, s: t, e: Math.min(1440, t + 120), ids: avail.map((p) => p.id), date: cell.date })}>
-          <CalendarPlus size={16} /> Planifier une séance ici
+    <Modal title={`${date ? fmtDay(date, { weekday: 'long', day: 'numeric', month: 'short' }) : DAYS[d]} · ${fmt(s)}–${fmt(e)}`} onClose={onClose}
+      footer={full.length > 1 && (
+        <button className="btn primary block" onClick={() => onPlan({ d, s: ps, e: pe, ids: full.map((p) => p.id), date })}>
+          <CalendarPlus size={16} /> Planifier une séance ({fmt(ps)}–{fmt(pe)})
         </button>
       )}>
-      <p className="muted"><b>{avail.length}</b> personne{avail.length > 1 ? 's' : ''} dispo sur {people.length}</p>
       {c && <p className="compat-line">{compatText(c)}</p>}
-      {avail.length === 0 ? <Empty icon={UserX} title="Personne à cette heure-là" /> : (
-        <div className="plist">
-          {avail.map((p) => {
-            const s = slotsOf(p, d).find((x) => x.s <= t && x.e > t);
-            return (
-              <div key={p.id} className="prow">
-                <Avatar p={p} size={34} />
-                <div className="grow">
-                  <Name p={p} meId={meId} full />
-                  <div className="muted tiny">dispo {fmt(s.s)} – {fmt(s.e)}</div>
-                  <PersonBadges p={p} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {full.length + partial.length === 0 ? <Empty icon={UserX} title="Personne à cette heure-là" /> : (
+        <PeopleGroups meId={meId} groups={[
+          { label: 'Dispo toute l’heure', color: '#16A34A', people: full, extra: times, showEmpty: true },
+          { label: 'Dispo une partie', color: '#D97706', people: partial, extra: times },
+        ]} />
       )}
     </Modal>
   );

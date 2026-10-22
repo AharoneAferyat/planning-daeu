@@ -17,6 +17,7 @@ import CellSheet from './components/CellSheet';
 import Filters, { EMPTY_FILTERS } from './components/Filters';
 import PollsView, { PollForm, SessionForm, SessionSheet } from './components/Polls';
 import { Avatar, Spinner, Toast } from './components/ui';
+import { AlertsBar, AlertsPopup } from './components/Alerts';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 
 export default function App() {
@@ -133,6 +134,13 @@ function PublicApp() {
       prefill: [0, 7].map((k) => ({ id: uid(), date: isoDate(addDays(parseIso(first), k)), sh: toH(x.s), eh: toH(x.e) })),
     });
   };
+  const goPolls = (pollId) => {
+    setView('seances');
+    setTimeout(() => {
+      const el = pollId && document.getElementById(`poll-${pollId}`);
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+    }, 120);
+  };
   const planFromSlot = (x) => setSessionForm({ prefill: { date: x.date || nextDateForWeekday(x.d), s: x.s, e: x.e, attendees: x.ids } });
 
   return (
@@ -141,6 +149,7 @@ function PublicApp() {
         <div className="brand"><span className="logo"><CalendarHeart size={20} /></span><span className="brand-name">{settings.appTitle}</span></div>
         <div className="top-actions">
           <button className="btn small primary hide-xs" onClick={() => setEditing(true)}><Pencil size={15} /> Mes dispos</button>
+          <button className="icon-btn show-xs edit-top" onClick={() => setEditing(true)} aria-label="Modifier mes dispos" title="Mes dispos"><Pencil size={20} /></button>
           <button className="icon-btn" onClick={share} title="Partager le lien"><Share2 size={20} /></button>
           <ThemeButton mode={theme} cycle={cycleTheme} />
           <div className="me-menu">
@@ -177,6 +186,8 @@ function PublicApp() {
           <span><b>{polls.filter((p) => p.status !== 'closed').length}</b> sondage(s) en cours</span>
         </div>
 
+        <AlertsBar sessions={sessions} polls={polls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
+
         {view !== 'seances' && (
           <Filters filters={filters} setFilters={setFilters} people={filtered} highlight={highlight} setHighlight={setHighlight} />
         )}
@@ -185,13 +196,12 @@ function PublicApp() {
           highlight={highlight} onCell={setCell} onSession={setSessionOpen} meId={me.id} />}
         {view === 'jours' && <DayView people={filtered} sessions={sessions} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} setHighlight={setHighlight} meId={me.id} onSession={setSessionOpen} />}
-        {view === 'creneaux' && <BestSlots people={filtered} onPoll={pollFromSlot} onPlan={planFromSlot} />}
+        {view === 'creneaux' && <BestSlots people={filtered} onPoll={pollFromSlot} onPlan={planFromSlot} meId={me.id} />}
         {view === 'seances' && <PollsView polls={polls} sessions={sessions} people={people} me={me} isAdmin={false}
           onSession={setSessionOpen} openPollForm={(p) => setPollForm({ initial: p })} openSessionForm={(s) => setSessionForm({ initial: s })} />}
         {view === 'gens' && <PeopleView people={filtered} meId={me.id} highlight={highlight} setHighlight={setHighlight} />}
       </main>
 
-      <button className="fab" onClick={() => setEditing(true)} aria-label="Modifier mes dispos"><Pencil size={22} /></button>
 
       {editing && <DispoForm existing={me} people={people} onClose={() => setEditing(false)}
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
@@ -207,6 +217,7 @@ function PublicApp() {
         onClose={() => { setPollForm(null); setView('seances'); }} />}
       {sessionForm && <SessionForm initial={sessionForm.initial} prefill={sessionForm.prefill} people={people} me={me}
         onClose={() => setSessionForm(null)} />}
+      <AlertsPopup sessions={sessions} polls={polls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
       <Toast text={toast} onDone={clearToast} />
     </div>
   );

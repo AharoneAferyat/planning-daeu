@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Ban, Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
+  AlertTriangle, Ban, Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
 } from 'lucide-react';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
@@ -14,7 +14,7 @@ import SessionInfoBlock from './SessionInfo';
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
-import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
+import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personCoursesAt, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
 
@@ -252,6 +252,20 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
                   ))}
                 </div>
               )}
+              {canVote && (draft[o.id] === 'yes' || draft[o.id] === 'maybe') && (() => {
+                const mine = personCoursesAt(me, settings, o.date, parseIso(o.date).getDay(), o.s, o.e);
+                if (!mine.length) return null;
+                return (
+                  <div className="course-warn" role="alert">
+                    <AlertTriangle size={17} />
+                    <div>
+                      <b>Attention, ce sont tes heures de cours !</b>
+                      <span>{mine.map((c) => `${SUBJECTS[c.subject]?.label || c.subject} ${fmt(c.s)}-${fmt(c.e)}`).join(' · ')}</span>
+                      <span className="muted">Ton « {VOTE[draft[o.id]].label} » est quand même enregistré.</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

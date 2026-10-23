@@ -232,13 +232,15 @@ function PollRow({ p, total, onGo, onHide }) {
 }
 
 // ---------- Fenêtre affichée à l'arrivée sur le site ----------
-export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls }) {
+// skip : arrivée par un lien direct → on ne masque pas la cible avec la fenêtre (le bandeau reste)
+export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls, skip }) {
   const a = useAlerts(sessions, polls, me);
   const total = people.length;
   const remKey = 'ge_rem_seen_' + [...a.decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...a.freed.map((s) => s.id + ':libre'), ...a.reminders.map((s) => s.id)].join(',');
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
+    if (skip) return;
     if (a.infos.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
     const showRem = (a.freed.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
     const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';

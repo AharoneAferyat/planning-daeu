@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { isConfigured } from './firebase';
 import { checkInvite, log, usePolls, useParticipants, useSessions, useSettings } from './data';
-import { addDays, isoDate, ls, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
+import { addDays, isoDate, ls, ss, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
 import useTheme from './useTheme';
 import ThemeButton from './components/ThemeButton';
 import { Gate, Identity, PinModal } from './components/AccessScreens';
@@ -59,6 +59,14 @@ function PublicApp() {
   const [cat, setCat] = useState(() => ls.get('ge_cat') || 'all');
   const [sub, setSub] = useState(() => ls.get('ge_sub') || 'all');
   const [promptDone, setPromptDone] = useState(false);
+  // Lien direct (?sondage=ID ou ?seance=ID) : gardé pendant toute la connexion, puis ouvert une fois connecté
+  const [goto, setGoto] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    const g = q.get('sondage') ? { type: 'poll', id: q.get('sondage') } : q.get('seance') ? { type: 'session', id: q.get('seance') } : null;
+    if (g) ss.set('ge_goto', JSON.stringify(g));
+    try { return g || JSON.parse(ss.get('ge_goto') || 'null'); } catch { return null; }
+  });
+  const [deepLinked] = useState(() => !!ss.get('ge_goto'));
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [highlight, setHighlight] = useState(null);
   const [weekStart, setWeekStart] = useState(() => weekStartOf(new Date()));
@@ -105,6 +113,29 @@ function PublicApp() {
   const inView = (x) => (cat === 'all' || inAudience(x, cat)) && (sub === 'all' || !x.subject || x.subject === sub);
   const viewPolls = useMemo(() => seePolls.filter(inView), [seePolls, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
   const viewSessions = useMemo(() => seeSessions.filter(inView), [seeSessions, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ouvre la cible du lien direct dès que la personne est connectée
+  useEffect(() => {
+    if (!me || !goto || !polls || !sessions || needsFormationPrompt(me)) return;
+    ss.del('ge_goto'); setGoto(null);
+    window.history.replaceState(null, '', window.location.pathname);
+    if (goto.type === 'poll') {
+      const p = polls.find((x) => x.id === goto.id);
+      setView('seances');
+      if (!p) { setToast('Ce sondage n’existe plus.'); return; }
+      if (!canSee(p, me)) { setToast('Ce sondage ne concerne pas ta formation / tes matières.'); return; }
+      if (p.status === 'cancelled') setToast('Ce sondage a été annulé.');
+      else if (p.status === 'closed') setToast('Ce sondage est terminé.');
+      setTimeout(() => {
+        const el = document.getElementById(`poll-${p.id}`);
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); }
+      }, 250);
+    } else {
+      const s = sessions.find((x) => x.id === goto.id);
+      if (!s) { setToast('Cette séance n’existe plus.'); return; }
+      setView('seances'); setSessionOpen(s);
+    }
+  }, [me, goto, polls, sessions, promptDone]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const pendingVotes = useMemo(() => (me ? seePolls.filter((p) => isOpenPoll(p) && !p.votes?.[me.id]).length : 0), [seePolls, me]);
 
   if (peopleErr) return <div className="center-screen"><p className="err">Erreur de connexion à la base : {peopleErr}</p></div>;
@@ -271,7 +302,7 @@ function PublicApp() {
         onClose={() => setSessionForm(null)} />}
       {needsFormationPrompt(me) && !promptDone ? (
         <FormationPrompt me={me} onDone={(f) => { setPromptDone(true); if (f) { setCat(f); setToast(`C'est noté : ${FORMATIONS[f].label}`); } }} />
-      ) : <AlertsPopup sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
+      ) : <AlertsPopup skip={deepLinked} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
       <Toast text={toast} onDone={clearToast} />
     </div>
   );

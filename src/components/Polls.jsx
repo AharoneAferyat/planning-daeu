@@ -11,6 +11,8 @@ import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleM
 import { isOpenPoll, placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
 import SessionInfoBlock from './SessionInfo';
+import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
+import WaButton, { SharedDone } from './WaButton';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
@@ -190,11 +192,10 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
           <AudiencePill item={poll} />
           <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}{min > 0 ? ` · ${min} minimum` : ''}</div>
         </div>
-        {canManage && (
-          <div className="poll-tools">
-            {!closed && <button className="icon-btn" onClick={onEdit} title="Modifier"><Pencil size={17} /></button>}
-          </div>
-        )}
+        <div className="poll-tools">
+          <WaButton onClick={() => shareWhatsApp(pollMessage(poll))} />
+          {canManage && !closed && <button className="icon-btn" onClick={onEdit} title="Modifier"><Pencil size={17} /></button>}
+        </div>
       </div>
 
       <button className="voters-line" onClick={() => setVotersOpen(true)}>
@@ -363,6 +364,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   const [options, setOptions] = useState(() => initial?.options?.map((o) => ({ ...o, sh: toHHMM(o.s), eh: toHHMM(o.e) }))
     || prefill || [{ id: uid(), date: isoDate(new Date(Date.now() + 86400000)), sh: '14:00', eh: '17:00' }]);
   const [err, setErr] = useState('');
+  const [created, setCreated] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const setOpt = (i, k, v) => setOptions((o) => o.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -389,14 +391,14 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
     const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts };
     setBusy(true);
     try {
-      if (isEdit) await updatePoll(initial.id, data, actorName(me), data.title);
-      else await createPoll(data, me, imAvailable);
-      onClose();
+      if (isEdit) { await updatePoll(initial.id, data, actorName(me), data.title); onClose(); }
+      else { const id = await createPoll(data, me, imAvailable); setCreated({ ...data, id, status: 'open' }); }
     } catch (e) { setErr(e.message); }
     setBusy(false);
   };
 
   return (
+    created ? <SharedDone title="Sondage publié" item={created.title} onShare={() => shareWhatsApp(pollMessage(created))} onClose={onClose} /> :
     <Modal wide title={isEdit ? 'Modifier le sondage' : 'Nouveau sondage'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Publier le sondage'}</button></>}>
       <label className="field"><span>Titre</span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} /></label>
@@ -482,6 +484,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
       footer={<>
         {canManage && <button className="btn ghost" onClick={onEdit}><Pencil size={16} /> Modifier</button>}
         <button className="btn ghost" onClick={ics} title="Ajouter à mon agenda"><CalendarPlus size={16} /></button>
+        <WaButton btn onClick={() => shareWhatsApp(sessionMessage(s))} />
         <span className="grow" />
         {!st.cancelled && isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => act(false)}>Je ne suis plus dispo</button>}
         {!st.cancelled && isPerson && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}
@@ -564,6 +567,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const [min, setMin] = useState(base.min || '');
   const maxLocked = !!(isEdit && initial.pollId && initial.max && me?.id !== 'admin');
   const [err, setErr] = useState('');
+  const [created, setCreated] = useState(null);
   const [busy, setBusy] = useState(false);
   const s = toMin(sh), e0 = toMin(eh);
   const item = { audience, subject, respectSchedule, format };
@@ -586,13 +590,13 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
     setBusy(true);
     try {
       if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
-      else await createSession(data, me);
-      onClose();
+      else { const id = await createSession(data, me); setCreated({ ...data, id }); }
     } catch (er) { setErr(er.message); }
     setBusy(false);
   };
 
   return (
+    created ? <SharedDone title="Séance ajoutée au planning" item={created.title} onShare={() => shareWhatsApp(sessionMessage(created))} onClose={onClose} /> :
     <Modal wide title={isEdit ? 'Modifier la séance' : 'Planifier une séance'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Ajouter au planning'}</button></>}>
       <label className="field"><span>Titre</span><input value={title} onChange={(ev) => setTitle(ev.target.value)} maxLength={60} /></label>

@@ -869,3 +869,8 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .modal-body .al-c-cancel .al-cancel { display: inline; }
 .folds { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
 .folds .sec-title { margin-top: 4px; }
+
+/* ---------- Partage WhatsApp ---------- */
+.wa { color: #16A34A; }
+.btn.wa-btn { background: #16A34A; border-color: #16A34A; color: #fff; }
+.btn.wa-btn:hover { filter: brightness(1.06); }

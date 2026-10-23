@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  ArrowLeft, CalendarCheck, History, KeyRound, LayoutDashboard, LogOut, Settings, ShieldCheck, Ticket, Users,
+  ArrowLeft, CalendarCheck, FlaskConical, History, KeyRound, LayoutDashboard, LogOut, Settings, ShieldCheck, Ticket, Users,
 } from 'lucide-react';
 import { DEFAULT_ADMIN_PIN } from '../config';
 import { log, useInvites, useLogs, useParticipants, usePolls, useSessions, useSettings } from '../data';
@@ -14,6 +14,7 @@ import AdminInvites from './AdminInvites';
 import AdminSessions from './AdminSessions';
 import AdminLogs from './AdminLogs';
 import AdminSettings from './AdminSettings';
+import AdminTest from './AdminTest';
 
 const TABS = [
   { key: 'dash', label: 'Tableau de bord', icon: LayoutDashboard },
@@ -21,6 +22,7 @@ const TABS = [
   { key: 'codes', label: 'Codes d’accès', icon: Ticket },
   { key: 'sessions', label: 'Séances & sondages', icon: CalendarCheck },
   { key: 'logs', label: 'Historique', icon: History },
+  { key: 'test', label: 'Mode test', icon: FlaskConical },
   { key: 'settings', label: 'Réglages', icon: Settings },
 ];
 
@@ -97,6 +99,7 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
         {tab === 'codes' && <AdminInvites {...data} />}
         {tab === 'sessions' && <AdminSessions {...data} />}
         {tab === 'logs' && <AdminLogs {...data} />}
+        {tab === 'test' && <AdminTest {...data} />}
         {tab === 'settings' && <AdminSettings {...data} />}
       </main>
     </div>

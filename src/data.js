@@ -7,6 +7,7 @@ import { db } from './firebase';
 import { DEFAULT_SETTINGS } from './config';
 import { fmt, fmtDayShort, shortUA, toDate, normalizeSlots } from './utils';
 import { splitPlaces, yesOrder } from './places';
+import { inTestMode, TEST_ID } from './testmode';
 
 // ---------- Historique ----------
 export async function log(type, actor, target = '', details = {}) {
@@ -48,8 +49,33 @@ export function useSettings() {
     () => setSettings({ ...DEFAULT_SETTINGS })), []);
   return settings;
 }
-export const useParticipants = () => useColWithError('participants', (d) => ({ id: d.id, ...d.data() }),
-  (a, b) => (a.prenom || '').localeCompare(b.prenom || '', 'fr') || (a.nom || '').localeCompare(b.nom || '', 'fr'));
+// Le profil test n'apparaît qu'en mode test
+export function useParticipants() {
+  const [rows, error] = useColWithError('participants', (d) => ({ id: d.id, ...d.data() }),
+    (a, b) => (a.prenom || '').localeCompare(b.prenom || '', 'fr') || (a.nom || '').localeCompare(b.nom || '', 'fr'));
+  return [rows && (inTestMode() ? rows : rows.filter((p) => !p.isTest)), error];
+}
+
+// ---------- Profil test ----------
+export function useTestProfile() {
+  const [p, setP] = useState(undefined);
+  useEffect(() => onSnapshot(doc(db, 'participants', TEST_ID), (s) => setP(s.exists() ? { id: s.id, ...s.data() } : null), () => setP(null)), []);
+  return p;
+}
+export async function saveTestProfile(data) {
+  const ref = doc(db, 'participants', TEST_ID);
+  const snap = await getDoc(ref);
+  if (snap.exists()) await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+  else {
+    await setDoc(ref, {
+      prenom: 'Profil', nom: 'Test', nameKey: 'profil|test', isTest: true, pin: '0000', color: '#64748B', freq: 2,
+      moments: ['egal'], format: 'both', distance: 'moyen', askedFormation: true, note: 'Profil de test admin (invisible)',
+      slots: [1, 2, 3, 4, 5].map((d) => ({ d, s: 600, e: 1080 })), createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updates: 0,
+      ...data,
+    });
+  }
+  await log('settings_update', 'Admin', 'Profil test', data);
+}
 export const useInvites = () => useCol('invites', (d) => ({ code: d.id, ...d.data() }), byCreatedDesc);
 export const usePolls = () => useCol('polls', (d) => ({ id: d.id, ...d.data() }), byCreatedDesc);
 export const useSessions = () => useCol('sessions', (d) => ({ id: d.id, ...d.data() }),

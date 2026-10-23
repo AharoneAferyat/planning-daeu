@@ -20,6 +20,7 @@ import { Avatar, Spinner, Toast } from './components/ui';
 import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
 import FormationPrompt, { needsFormationPrompt } from './components/FormationPrompt';
+import { isTestId, stopViewAs, viewAsId } from './testmode';
 import { canSee, FORMATIONS, inAudience, subjectOk } from './formations';
 import { log as logAction, updateParticipant } from './data';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
@@ -48,7 +49,8 @@ function PublicApp() {
   const [code, setCode] = useState(() => ls.get('ge_code'));
   const [codeChecked, setCodeChecked] = useState(false);
   const [gateMsg, setGateMsg] = useState('');
-  const [pid, setPid] = useState(() => ls.get('ge_pid'));
+  const viewAs = viewAsId(); // mode test admin
+  const [pid, setPid] = useState(() => viewAs || ls.get('ge_pid'));
   const [creating, setCreating] = useState(false);
   const [pinFor, setPinFor] = useState(null);
 
@@ -89,7 +91,9 @@ function PublicApp() {
   }, [code, pid]);
 
   const me = useMemo(() => people?.find((p) => p.id === pid) || null, [people, pid]);
-  useEffect(() => { if (people && pid && !me) { ls.del('ge_pid'); setPid(null); } }, [people, pid, me]);
+  useEffect(() => {
+    if (people && pid && !me) { if (viewAs) stopViewAs(true); else { ls.del('ge_pid'); setPid(null); } }
+  }, [people, pid, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Vue par formation / matière (les heures de cours sont retirées des dispos dans chaque vue)
   const catPeople = useMemo(() => (people || [])
@@ -141,6 +145,7 @@ function PublicApp() {
   };
 
   const logout = () => {
+    if (viewAs) return stopViewAs(true);
     log('participant_logout', `${me.prenom} ${me.nom}`, '');
     ls.del('ge_pid'); setPid(null); setMenu(false);
   };
@@ -162,6 +167,14 @@ function PublicApp() {
 
   return (
     <div className="app">
+      {viewAs && (
+        <div className="test-banner">
+          <span><b>Mode test</b> · tu vois le site comme <b>{me.prenom} {me.nom}</b>{isTestId(me.id) ? ' (profil invisible des autres)' : ' — attention, tes actions sont réelles en son nom'}</span>
+          <span className="tb-btns">
+            <button className="btn small" onClick={() => stopViewAs(true)}>Retour admin</button>
+          </span>
+        </div>
+      )}
       <header className="topbar">
         <div className="brand"><span className="logo"><CalendarHeart size={20} /></span><span className="brand-name">{settings.appTitle}</span></div>
         <div className="top-actions">

@@ -1,9 +1,10 @@
 // Gestion des places limitées et de la liste d'attente
+import { hiddenId } from './testmode';
 
 // Ordre d'arrivée des « oui » pour une date d'un sondage
 export function yesOrder(poll, optId) {
   const v = poll.votes || {};
-  const isYes = (id) => v[id]?.[optId] === 'yes';
+  const isYes = (id) => v[id]?.[optId] === 'yes' && !hiddenId(id);
   const queue = (poll.queue?.[optId] || []).filter(isYes);
   const rest = Object.keys(v).filter((id) => isYes(id) && !queue.includes(id));
   return [...queue, ...rest];
@@ -18,8 +19,8 @@ export function splitPlaces(ids, max) {
 // État d'une séance pour une personne
 export function sessionState(s, meId) {
   const max = Number(s.max) || 0;
-  const att = s.attendees || [];
-  const wait = s.waitlist || [];
+  const att = (s.attendees || []).filter((id) => !hiddenId(id));
+  const wait = (s.waitlist || []).filter((id) => !hiddenId(id));
   const free = max ? Math.max(0, max - att.length) : Infinity;
   const full = max > 0 && att.length >= max;
   const status = att.includes(meId) ? 'in' : wait.includes(meId) ? 'wait' : 'out';

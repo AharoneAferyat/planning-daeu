@@ -9,6 +9,7 @@ import {
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 import { placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
+import { hiddenId } from '../testmode';
 import { audienceLabel, conflictsFor, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
@@ -27,7 +28,8 @@ export function forecast(allPeople, date, s, e, ctx = {}) {
 
 function scoreOf(poll, optId) {
   let yes = 0, maybe = 0, no = 0;
-  for (const v of Object.values(poll.votes || {})) {
+  for (const [id, v] of Object.entries(poll.votes || {})) {
+    if (hiddenId(id)) continue;
     if (v?.[optId] === 'yes') yes++; else if (v?.[optId] === 'maybe') maybe++; else if (v?.[optId] === 'no') no++;
   }
   return { yes, maybe, no, score: yes * 2 + maybe };

@@ -803,3 +803,13 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
   .se-date span { min-width: 22px; }
 }
 .subj-row { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ---------- Mode test ---------- */
+.test-banner { position: relative; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 14px; background: repeating-linear-gradient(-45deg, #FDE68A 0 12px, #FCD34D 12px 24px); color: #1b1300; font-size: 13px; }
+.test-banner .btn { background: #fff; color: #1b1300; border-color: transparent; }
+.test-banner + .topbar { top: 0; }
+.test-card { border-color: color-mix(in srgb, #F59E0B 50%, var(--border)); }
+.test-preview { font-size: 13px; padding: 9px 12px; border-radius: 10px; background: var(--surface-2); }
+.test-list { max-height: 50vh; margin-top: 8px; }
+.test-list .who { width: 100%; }
+.alert.tiny { align-items: flex-start; }

@@ -4,6 +4,7 @@ import { cancelSession, joinSession, keepSession } from '../data';
 import { addDays, fmt, fmtDay, fmtDayShort, isPast, isoDate, ls, ss } from '../utils';
 import { AvatarStack, Modal } from './ui';
 import { decisionFor, placesLabel, sessionState } from '../places';
+import { hiddenId } from '../testmode';
 import { ConfirmButton } from './ui';
 
 const readList = (k) => { try { return JSON.parse(ls.get(k) || '[]'); } catch { return []; } };
@@ -124,7 +125,7 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls 
             {pendingPolls.length > 0 && <span className="pill warn al-h-pill">{pendingPolls.length} à voter</span>}</h4>
           {openPolls.map((p) => {
             const voted = !!p.votes?.[me.id];
-            const nVotes = Object.keys(p.votes || {}).length;
+            const nVotes = Object.keys(p.votes || {}).filter((id) => !hiddenId(id)).length;
             const mine = p.createdBy === me.id;
             return (
             <div key={p.id} className={'al-poll' + (voted ? ' voted' : ' todo')}>

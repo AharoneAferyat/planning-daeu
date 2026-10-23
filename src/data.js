@@ -242,6 +242,20 @@ export async function closePoll(poll, option, extra, actor) {
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
   return sRef.id;
 }
+// ---------- Commentaires des sondages ----------
+export async function addPollComment(poll, me, text, optId = null) {
+  const c = {
+    id: Math.random().toString(36).slice(2, 10), by: me.id, byName: `${me.prenom} ${me.nom || ''}`.trim(),
+    text: text.trim().slice(0, 300), optId: optId || null, at: Date.now(),
+  };
+  await updateDoc(doc(db, 'polls', poll.id), { comments: arrayUnion(c) });
+  await log('poll_comment', c.byName, poll.title, { commentaire: c.text });
+}
+export async function deletePollComment(poll, c, actor) {
+  await updateDoc(doc(db, 'polls', poll.id), { comments: arrayRemove(c) });
+  await log('poll_comment_delete', actor, poll.title, { commentaire: c.text, auteur: c.byName });
+}
+
 // Annuler / rétablir un sondage (il reste visible, barré ; les votants Oui / Peut-être sont prévenus)
 export async function cancelPoll(poll, actor, cancel = true) {
   await updateDoc(doc(db, 'polls', poll.id), cancel

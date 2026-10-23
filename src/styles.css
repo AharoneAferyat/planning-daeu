@@ -874,3 +874,29 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .wa { color: #16A34A; }
 .btn.wa-btn { background: #16A34A; border-color: #16A34A; color: #fff; }
 .btn.wa-btn:hover { filter: brightness(1.06); }
+.btn.wa-btn { background: #25D366; border-color: #25D366; color: #fff; font-weight: 700; }
+[data-theme="dark"] .btn.wa-btn { color: #062b14; }
+.btn.wa-wide { width: 100%; }
+.wa-btn svg { flex-shrink: 0; }
+
+/* ---------- Commentaires ---------- */
+.pcom { border-top: 1px solid var(--border); padding-top: 10px; }
+.pcom-head { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: none; padding: 0 0 6px; cursor: pointer; color: var(--text); font-size: 14px; }
+.pcom-n { font-size: 12px; font-weight: 800; padding: 0 7px; border-radius: 999px; background: rgba(var(--accent-rgb), .14); color: var(--accent); }
+.pcom-chev { margin-left: auto; color: var(--muted); }
+.pcom-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.pcom-item { display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border-radius: 10px; background: var(--surface-2); }
+.pcom-item.mine { background: rgba(var(--accent-rgb), .08); }
+.pcom-item p { margin: 2px 0 0; font-size: 14px; word-break: break-word; }
+.pcom-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12.5px; }
+.pcom-opt { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); }
+.pcom-av { width: 26px; height: 26px; border-radius: 50%; background: var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.pcom-form { display: flex; flex-direction: column; gap: 6px; }
+.pcom-quick { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.pcom-quick::-webkit-scrollbar { display: none; }
+.pcom-form select { min-height: 38px; font-size: 13.5px; }
+.pcom-input { display: flex; gap: 6px; }
+.pcom-input input { min-height: 42px; }
+.pcom-input .btn { min-width: 46px; padding: 0 12px; }
+.pm-after { margin-bottom: 14px; }
+.vc.com { background: rgba(var(--accent-rgb), .12); color: var(--accent); }

@@ -13,6 +13,7 @@ import { hiddenId } from '../testmode';
 import SessionInfoBlock from './SessionInfo';
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
+import PollComments from './PollComments';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
@@ -192,10 +193,11 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
           <AudiencePill item={poll} />
           <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}{min > 0 ? ` · ${min} minimum` : ''}</div>
         </div>
-        <div className="poll-tools">
-          <WaButton onClick={() => shareWhatsApp(pollMessage(poll))} />
-          {canManage && !closed && <button className="icon-btn" onClick={onEdit} title="Modifier"><Pencil size={17} /></button>}
-        </div>
+        {canManage && !closed && (
+          <div className="poll-tools">
+            <button className="icon-btn" onClick={onEdit} title="Modifier"><Pencil size={17} /></button>
+          </div>
+        )}
       </div>
 
       <button className="voters-line" onClick={() => setVotersOpen(true)}>
@@ -235,6 +237,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
                   {min > 0 && <span className={'vc ' + (g.yes.length >= min ? 'minok' : 'minko')}>{g.yes.length >= min ? `min ${min} ✓` : `il manque ${min - g.yes.length} (min ${min})`}</span>}
                   {max > 0 && <span className={'vc places' + (g.yes.length >= max ? ' full' : '')}>{Math.min(g.yes.length, max)}/{max} places{g.yesWait.length ? ` · ${g.yesWait.length} en attente` : ''}</span>}
                   <span className="fc"><Clock size={12} /> {g.fc.full.length} dispo (planning)</span>
+                  {(() => { const n = (poll.comments || []).filter((c) => c.optId === o.id).length; return n > 0 && <span className="vc com">💬 {n} commentaire{n > 1 ? 's' : ''}</span>; })()}
                 </div>
                 {g.yes.length + g.maybe.length > 0 && <AvatarStack people={[...g.yes, ...g.maybe]} max={8} size={24} />}
                 {me && g.yesIn.some((p) => p.id === me.id) && max > 0 && <span className="pill ok my-place"><Check size={12} /> Ta place est réservée</span>}
@@ -254,6 +257,8 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
         })}
       </div>
 
+      <PollComments poll={poll} me={me} people={people} canModerate={canManage} />
+      {!isCancelled && <WaButton wide onClick={() => shareWhatsApp(pollMessage(poll))} />}
       {isCancelled && <p className="alert danger-alert"><b>Sondage annulé</b>{poll.cancelledBy ? ` par ${poll.cancelledBy}` : ''}. Ceux qui avaient voté Oui ou Peut-être ont été prévenus.</p>}
       {canManage && (
         <div className="manage-row">
@@ -276,6 +281,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
 
       {detail && (
         <PeopleModal meId={me?.id} onClose={() => setDetail(null)}
+          after={<PollComments poll={poll} me={me} people={people} canModerate={canManage} optId={detail.id} />}
           title={`${fmtDay(detail.date, { weekday: 'long', day: 'numeric', month: 'short' })} · ${fmt(detail.s)}–${fmt(detail.e)}`}
           subtitle={poll.title}
           groups={[
@@ -484,7 +490,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
       footer={<>
         {canManage && <button className="btn ghost" onClick={onEdit}><Pencil size={16} /> Modifier</button>}
         <button className="btn ghost" onClick={ics} title="Ajouter à mon agenda"><CalendarPlus size={16} /></button>
-        <WaButton btn onClick={() => shareWhatsApp(sessionMessage(s))} />
+        <WaButton onClick={() => shareWhatsApp(sessionMessage(s))} />
         <span className="grow" />
         {!st.cancelled && isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => act(false)}>Je ne suis plus dispo</button>}
         {!st.cancelled && isPerson && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}

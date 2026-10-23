@@ -83,10 +83,11 @@ export function PeopleGroups({ groups, meId }) {
   );
 }
 
-export function PeopleModal({ title, subtitle, groups, meId, onClose, footer }) {
+export function PeopleModal({ title, subtitle, groups, meId, onClose, footer, after }) {
   return (
     <Modal title={title} onClose={onClose} footer={footer}>
       {subtitle && <p className="muted modal-sub">{subtitle}</p>}
+      {after && <div className="pm-after">{after}</div>}
       <PeopleGroups groups={groups} meId={meId} />
     </Modal>
   );

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { isConfigured } from './firebase';
 import { checkInvite, log, usePolls, useParticipants, useSessions, useSettings } from './data';
+import { autoCleanup } from './cleanup';
 import { addDays, isoDate, ls, ss, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
 import useTheme from './useTheme';
 import ThemeButton from './components/ThemeButton';
@@ -45,6 +46,8 @@ function PublicApp() {
   const [people, peopleErr] = useParticipants();
   const polls = usePolls();
   const sessions = useSessions();
+  // Ménage automatique des vieilles séances / vieux sondages (1 fois par jour et par appareil)
+  useEffect(() => { if (settings && polls && sessions) autoCleanup(polls, sessions, settings); }, [settings, polls, sessions]);
   const [theme, cycleTheme] = useTheme();
 
   const [code, setCode] = useState(() => ls.get('ge_code'));

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { AlertTriangle, Download, KeyRound, Save } from 'lucide-react';
+import { AlertTriangle, Brush, Download, KeyRound, Save } from 'lucide-react';
+import { cleanupMonths, cleanupOn, oldItems, runCleanup } from '../cleanup';
 import { DAYS_SHORT, DISTANCES, FORMATS } from '../constants';
 import { fetchAll, log, saveSettings, wipeCollection } from '../data';
 import { download, fmt, fmtDate, hashPin, momentsLabel, totalMinutes, fmtDur } from '../utils';
@@ -7,7 +8,7 @@ import { ConfirmButton, Toast } from '../components/ui';
 import ScheduleEditor from './ScheduleEditor';
 import { formationsLabel } from '../formations';
 
-export default function AdminSettings({ settings, people }) {
+export default function AdminSettings({ settings, people, polls, sessions }) {
   const [appTitle, setAppTitle] = useState(settings.appTitle);
   const [welcome, setWelcome] = useState(settings.welcome);
   const [requireCode, setRequireCode] = useState(settings.requireCode);
@@ -15,6 +16,9 @@ export default function AdminSettings({ settings, people }) {
   const [pin2, setPin2] = useState('');
   const [toast, setToast] = useState('');
   const [err, setErr] = useState('');
+  const months = cleanupMonths(settings);
+  const old = oldItems(polls, sessions, months);
+  const setCleanup = (data, details) => saveSettings(data, details).then(() => setToast('Réglage enregistré'));
 
   const saveGeneral = async () => {
     const changes = {};
@@ -71,6 +75,32 @@ export default function AdminSettings({ settings, people }) {
           <span><b>Code d'invitation obligatoire</b><br /><small className="muted">Désactivé : n'importe qui ayant l'adresse du site peut entrer (nom + prénom restent obligatoires).</small></span>
         </label>
         <button className="btn primary" onClick={saveGeneral}><Save size={16} /> Enregistrer</button>
+      </div>
+
+      <div className="card">
+        <h4 className="card-title"><Brush size={17} /> Ménage automatique</h4>
+        <label className="switch">
+          <input type="checkbox" checked={cleanupOn(settings)} onChange={(e) => setCleanup({ autoCleanup: e.target.checked }, { menageAuto: e.target.checked ? 'activé' : 'désactivé' })} />
+          <span><b>Supprimer automatiquement ce qui est vieux</b><br />
+            <small className="muted">Les séances (faites ou annulées) et les sondages dont toutes les dates sont passées depuis plus de :</small></span>
+        </label>
+        <div className="chips">
+          {[1, 2, 3, 6, 12].map((m) => (
+            <button key={m} className={'chip' + (m === months ? ' on' : '')} disabled={!cleanupOn(settings)}
+              onClick={() => setCleanup({ cleanupMonths: m }, { menageApres: `${m} mois` })}>{m} mois</button>
+          ))}
+        </div>
+        <p className="muted tiny">Le ménage se fait tout seul quand quelqu'un ouvre le site (une fois par jour). Les commentaires des sondages partent avec eux. L'historique garde la liste de ce qui a été supprimé. Pense à faire une sauvegarde de temps en temps (plus bas).</p>
+        <p className="test-preview">
+          {old.sessions.length + old.polls.length === 0 ? 'Rien à supprimer pour le moment.'
+            : <>À supprimer maintenant : <b>{old.sessions.length}</b> séance(s) et <b>{old.polls.length}</b> sondage(s) de plus de {months} mois.</>}
+        </p>
+        {old.sessions.length + old.polls.length > 0 && (
+          <ConfirmButton className="btn ghost" confirmText={`Supprimer ${old.sessions.length} séance(s) et ${old.polls.length} sondage(s) ?`}
+            onConfirm={async () => { const r = await runCleanup(polls, sessions, months, 'Admin'); setToast(`${r.sessions.length} séance(s) et ${r.polls.length} sondage(s) supprimés`); }}>
+            <Brush size={15} /> Faire le ménage maintenant
+          </ConfirmButton>
+        )}
       </div>
 
       <div className="card">

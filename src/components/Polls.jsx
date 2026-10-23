@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, Ban, Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
 } from 'lucide-react';
+import { arrayUnion } from 'firebase/firestore';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
   cancelPoll, cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
@@ -148,6 +149,9 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
   const isCancelled = poll.status === 'cancelled';
   const myVotes = (me && poll.votes?.[me.id]) || {};
   const [draft, setDraft] = useState(myVotes);
+  const liveKey = JSON.stringify(myVotes);
+  // Si le vote change ailleurs (autre appareil, création du sondage…), on resynchronise l'affichage
+  useEffect(() => { setDraft(JSON.parse(liveKey)); }, [liveKey]);
   const [busy, setBusy] = useState(false);
   const [closing, setClosing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -411,7 +415,15 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
     const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts };
     setBusy(true);
     try {
-      if (isEdit) { await updatePoll(initial.id, data, actorName(me), data.title); onClose(); }
+      if (isEdit) {
+        // Les dates ajoutées par le créateur : il est compté « Oui » dessus aussi
+        const added = opts.filter((o) => !initial.options.some((x) => x.id === o.id));
+        const extra = {};
+        if (me && me.id !== 'admin' && me.id === initial.createdBy && added.length) {
+          for (const o of added) { extra[`votes.${me.id}.${o.id}`] = 'yes'; extra[`queue.${o.id}`] = arrayUnion(me.id); }
+        }
+        await updatePoll(initial.id, { ...data, ...extra }, actorName(me), data.title); onClose();
+      }
       else { const id = await createPoll(data, me, imAvailable); setCreated({ ...data, id, status: 'open' }); }
     } catch (e) { setErr(e.message); }
     setBusy(false);

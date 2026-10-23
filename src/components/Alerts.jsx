@@ -5,6 +5,7 @@ import { addDays, fmt, fmtDay, fmtDayShort, isPast, isoDate, ls, ss } from '../u
 import { AvatarStack, Modal } from './ui';
 import { decisionFor, placesLabel, sessionState } from '../places';
 import { hiddenId } from '../testmode';
+import { hasInfo, InfoLines } from './SessionInfo';
 import { ConfirmButton } from './ui';
 
 const readList = (k) => { try { return JSON.parse(ls.get(k) || '[]'); } catch { return []; } };
@@ -130,110 +131,179 @@ function SessionLine({ s, people, me, onOpen, compact }) {
 }
 
 // ---------- Fenêtre affichée à l'arrivée sur le site ----------
-export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls }) {
-  const reminders = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
-  const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
+// ---------- Infos pratiques ajoutées / modifiées (pour les inscrits) ----------
+const infoKey = (s) => `${s.id}:${s.infoVersion || 0}`;
+export function infoFor(sessions, meId) {
+  const seen = readList('ge_info_seen');
+  return sessions.filter((s) => !s.cancelled && !isPast(s.date, s.e) && hasInfo(s)
+    && sessionState(s, meId).status === 'in' && !seen.includes(infoKey(s)));
+}
+function ackInfo(s) {
+  const next = [...new Set([...readList('ge_info_seen'), infoKey(s)])];
+  ls.set('ge_info_seen', JSON.stringify(next));
+  window.dispatchEvent(new Event('ge-cancel-seen'));
+}
+function useInfos(sessions, meId) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const f = () => setTick((t) => t + 1);
+    window.addEventListener('ge-cancel-seen', f);
+    return () => window.removeEventListener('ge-cancel-seen', f);
+  }, []);
+  return useMemo(() => infoFor(sessions, meId), [sessions, meId, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+export function InfoCard({ s, onOpen }) {
+  return (
+    <div className="al-card al-c-info">
+      <div className="grow">
+        <span className="al-info-tag">Infos importantes</span>
+        <button className="al-sess-main" onClick={() => onOpen(s)}>
+          <b>{s.title} — infos importantes</b>
+          <span className="muted tiny">{dayLabel(s.date)} · {fmt(s.s)}–{fmt(s.e)}</span>
+        </button>
+        <InfoLines info={s.info} compact />
+      </div>
+      <button className="btn small" onClick={() => ackInfo(s)}><Check size={14} /> Compris</button>
+    </div>
+  );
+}
+
+/*
+  ORDRE DE PRIORITÉ des rappels (fenêtre d'accueil et bandeau) :
+  1. Infos importantes d'une séance où je suis inscrit(e)
+  2. Séance annulée (j'étais inscrit, en attente, ou j'avais voté Oui / Peut-être)
+  3. Place libérée (je suis en liste d'attente)
+  4. À décider (je suis le créateur et le minimum n'est pas atteint)
+  5. Séances à venir (3 prochains jours, sinon la prochaine)
+  6. Sondages à voter
+  7. Sondages en cours déjà votés
+*/
+function useAlerts(sessions, polls, me) {
+  const infos = useInfos(sessions, me.id);
   const cancelled = useCancelled(sessions, polls, me.id);
+  const all = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
+  const freed = all.filter((s) => freedFor(s, me.id));
+  const reminders = all.filter((s) => !freedFor(s, me.id));
+  const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
+  const votedPolls = openPolls.filter((p) => p.votes?.[me.id]);
+  return { infos, cancelled, freed, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
+}
+
+// Ligne compacte : titre + 1 ligne d'info + bouton
+function PollRow({ p, total, onGo, onHide }) {
+  const nVotes = Object.keys(p.votes || {}).filter((id) => !hiddenId(id)).length;
+  return (
+    <div className="al-row">
+      <button className="al-row-main" onClick={onGo}>
+        <b>{p.title}</b>
+        <span className="muted tiny">{nVotes}/{total} réponses{p.deadline ? ` · avant le ${fmtDayShort(p.deadline)}` : ''}</span>
+      </button>
+      <button className="btn small primary" onClick={onGo}>Répondre</button>
+      <button className="icon-btn" onClick={onHide} title="Ne plus me le rappeler" aria-label="Ne plus afficher"><EyeOff size={16} /></button>
+    </div>
+  );
+}
+
+// ---------- Fenêtre affichée à l'arrivée sur le site ----------
+export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls }) {
+  const a = useAlerts(sessions, polls, me);
   const total = people.length;
-  const remKey = 'ge_rem_seen_' + [...decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...reminders.map((s) => s.id + (freedFor(s, me.id) ? ':libre' : '') + (s.cancelled ? ':x' : ''))].join(',');
+  const remKey = 'ge_rem_seen_' + [...a.decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...a.freed.map((s) => s.id + ':libre'), ...a.reminders.map((s) => s.id)].join(',');
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const showRem = (reminders.length > 0 || decisions.length > 0) && ss.get(remKey) !== '1';
-    if (cancelled.length) { setOpen(true); return; } // annulation pas encore vue : toujours afficher
-    const showPolls = openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
+    if (a.infos.length || a.cancelled.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
+    const showRem = (a.freed.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
+    const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     if (showRem || showPolls) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!open) return null;
   const close = () => { ss.set(remKey, '1'); ss.set('ge_polls_later', '1'); setOpen(false); };
-  const soon = reminders.length && reminders[0].date <= isoDate(addDays(new Date(), 3));
+  const openS = (x) => { close(); onSession(x); };
+  const soon = a.reminders.length && a.reminders[0].date <= isoDate(addDays(new Date(), 3));
+  const Section = ({ title, children, cls = '' }) => <section className={'al-block ' + cls}><h4>{title}</h4>{children}</section>;
 
   return (
     <Modal title={<><Bell size={18} /> Rappels</>} onClose={close}
-      footer={<button className="btn primary block" onClick={close}>OK</button>}>
-      {cancelled.length > 0 && (
-        <section className="al-block">
-          <h4>{cancelled.length > 1 ? 'Séances annulées' : 'Séance annulée'}</h4>
-          {cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={(x) => { close(); onSession(x); }} />)}
-        </section>
+      footer={<>
+        {a.pendingPolls.length > 0 && <button className="btn ghost" onClick={() => { ss.set('ge_polls_later', '1'); ss.set(remKey, '1'); setOpen(false); }}>Plus tard</button>}
+        <button className="btn primary grow" onClick={close}>OK</button>
+      </>}>
+      {a.infos.length > 0 && (
+        <Section title="Infos importantes" cls="prio">
+          {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={openS} />)}
+        </Section>
       )}
-      {decisions.length > 0 && (
-        <section className="al-block">
-          <h4>À décider</h4>
-          {decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={(x) => { close(); onSession(x); }} />)}
-        </section>
+      {a.cancelled.length > 0 && (
+        <Section title={a.cancelled.length > 1 ? 'Séances annulées' : 'Séance annulée'}>
+          {a.cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={openS} />)}
+        </Section>
       )}
-      {reminders.length > 0 && (
-        <section className="al-block">
-          <h4>{reminders.some((s) => freedFor(s, me.id)) ? 'Place libérée et séances à venir' : soon ? (reminders.length > 1 ? 'Séances des 3 prochains jours' : 'Séance à venir') : 'Prochaine séance'}</h4>
-          {reminders.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={(x) => { close(); onSession(x); }} />)}
-        </section>
+      {a.freed.length > 0 && (
+        <Section title="Une place s'est libérée">
+          {a.freed.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={openS} compact />)}
+        </Section>
       )}
-      {openPolls.length > 0 && (
-        <section className="al-block">
-          <h4>{openPolls.length > 1 ? `${openPolls.length} sondages en cours` : 'Un sondage en cours'}
-            {pendingPolls.length > 0 && <span className="pill warn al-h-pill">{pendingPolls.length} à voter</span>}</h4>
-          {openPolls.map((p) => {
-            const voted = !!p.votes?.[me.id];
-            const nVotes = Object.keys(p.votes || {}).filter((id) => !hiddenId(id)).length;
-            const mine = p.createdBy === me.id;
-            return (
-            <div key={p.id} className={'al-poll' + (voted ? ' voted' : ' todo')}>
-              <div className="grow">
-                <div className="al-poll-tags">
-                  {voted ? <span className="pill ok"><Check size={12} /> Tu as voté</span> : <span className="pill warn">À toi de voter</span>}
-                  {mine && <span className="pill">Ton sondage</span>}
-                </div>
-                <b>{p.title}</b>
-                <div className="muted tiny">{nVotes}/{total} ont répondu · {p.options.length} date{p.options.length > 1 ? 's' : ''}
-                  {p.deadline ? ` · avant le ${fmtDayShort(p.deadline)}` : ''}{mine ? '' : ` · par ${p.createdByName}`}</div>
-              </div>
-              <div className="al-poll-btns">
-                <button className={'btn small' + (voted ? '' : ' primary')} onClick={() => { close(); onGoPolls(p.id); }}><Vote size={14} /> {voted ? 'Voir' : 'Répondre'}</button>
-                <button className="btn small ghost" onClick={() => hidePoll(p.id)} title="Ne plus me le rappeler"><EyeOff size={14} /> Ne plus afficher</button>
-              </div>
-            </div>
-            );
-          })}
-          <button className="link" onClick={() => { ss.set('ge_polls_later', '1'); ss.set(remKey, '1'); setOpen(false); }}>Répondre plus tard</button>
-        </section>
+      {a.decisions.length > 0 && (
+        <Section title="À décider">
+          {a.decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={openS} />)}
+        </Section>
+      )}
+      {a.reminders.length > 0 && (
+        <Section title={soon ? (a.reminders.length > 1 ? 'Séances des 3 prochains jours' : 'Séance à venir') : 'Prochaine séance'}>
+          {a.reminders.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={openS} compact />)}
+        </Section>
+      )}
+      {a.pendingPolls.length > 0 && (
+        <Section title={a.pendingPolls.length > 1 ? `${a.pendingPolls.length} sondages à voter` : 'Un sondage à voter'}>
+          {a.pendingPolls.map((p) => <PollRow key={p.id} p={p} total={total} onGo={() => { close(); onGoPolls(p.id); }} onHide={() => a.hidePoll(p.id)} />)}
+        </Section>
+      )}
+      {a.votedPolls.length > 0 && (
+        <button className="al-summary" onClick={() => { close(); onGoPolls(a.votedPolls[0].id); }}>
+          <Check size={15} /> {a.votedPolls.length} sondage{a.votedPolls.length > 1 ? 's' : ''} en cours où tu as déjà voté <ChevronRight size={15} />
+        </button>
       )}
     </Modal>
   );
 }
 
-// ---------- Bandeaux permanents en haut du planning ----------
+// ---------- Bandeaux permanents en haut du planning (même ordre de priorité) ----------
 export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls }) {
-  const reminders = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
-  const [pendingPolls, , openPolls] = usePendingPolls(polls, me.id);
-  const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
-  const cancelled = useCancelled(sessions, polls, me.id);
+  const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
-  if ((!reminders.length || closedRem) && !openPolls.length && !decisions.length && !cancelled.length) return null;
+  const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
+  if (!a.infos.length && !a.cancelled.length && !a.decisions.length && !sessLines.length && !a.openPolls.length) return null;
   return (
     <div className="al-bar">
-      {cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={onSession} />)}
-      {decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={onSession} />)}
-      {reminders.length > 0 && !closedRem && (
+      {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
+      {a.cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={onSession} />)}
+      {a.freed.length > 0 && (
+        <div className="al-card al-c-sess">
+          <div className="grow al-list">{a.freed.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={onSession} compact />)}</div>
+        </div>
+      )}
+      {a.decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={onSession} />)}
+      {a.reminders.length > 0 && !closedRem && (
         <div className="al-card al-c-sess">
           <CalendarCheck size={20} className="al-ico" />
           <div className="grow al-list">
-            {reminders.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={onSession} compact />)}
+            {a.reminders.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={onSession} compact />)}
           </div>
           <button className="icon-btn" onClick={() => { ss.set('ge_bar_rem', '1'); setClosedRem(true); }} aria-label="Masquer"><X size={16} /></button>
         </div>
       )}
-      {openPolls.length > 0 && (
-        <button className={'al-card al-c-polls' + (pendingPolls.length ? '' : ' done')} onClick={() => onGoPolls((pendingPolls[0] || openPolls[0]).id)}>
+      {a.openPolls.length > 0 && (
+        <button className={'al-card al-c-polls' + (a.pendingPolls.length ? '' : ' done')} onClick={() => onGoPolls((a.pendingPolls[0] || a.openPolls[0]).id)}>
           <Vote size={20} className="al-ico" />
           <span className="grow">
-            <b>{openPolls.length > 1 ? `${openPolls.length} sondages en cours` : '1 sondage en cours'}</b>
-            {pendingPolls.length > 0 ? <> · <span className="al-todo">{pendingPolls.length} à voter</span></> : <> · tu as répondu à tout</>}
+            <b>{a.openPolls.length > 1 ? `${a.openPolls.length} sondages en cours` : '1 sondage en cours'}</b>
+            {a.pendingPolls.length > 0 ? <> · <span className="al-todo">{a.pendingPolls.length} à voter</span></> : <> · tu as répondu à tout</>}
           </span>
-          <span className="al-go">{pendingPolls.length ? 'Répondre' : 'Voir'} <ChevronRight size={16} /></span>
+          <span className="al-go">{a.pendingPolls.length ? 'Répondre' : 'Voir'} <ChevronRight size={16} /></span>
         </button>
       )}
     </div>

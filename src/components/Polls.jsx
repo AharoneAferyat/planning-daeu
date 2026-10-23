@@ -10,16 +10,20 @@ import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, t
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 import { placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
+import SessionInfoBlock from './SessionInfo';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
 
 // Nombre de personnes dispo d'après le planning pour une date/heure
 // ctx = { settings, item } : limite au public visé et retire les heures de cours si demandé
+// Format de la séance vs préférence de la personne (hybride : chacun choisit, donc tout le monde)
+export const formatOk = (p, format) => !format || format === 'hybride' || (format === 'presentiel' ? p.format !== 'visio' : p.format !== 'presentiel');
+
 export function forecast(allPeople, date, s, e, ctx = {}) {
   const wd = parseIso(date).getDay();
   const { settings, item } = ctx;
-  let people = item ? allPeople.filter((p) => personInAudience(item, p)) : allPeople;
+  let people = item ? allPeople.filter((p) => personInAudience(item, p) && formatOk(p, item.format)) : allPeople;
   if (item?.respectSchedule !== false && settings) people = people.map((p) => withoutCourses(p, settings, date, wd));
   const full = people.filter((p) => (p.slots || []).some((x) => x.d === wd && x.s <= s && x.e >= e));
   const part = people.filter((p) => !full.includes(p) && (p.slots || []).some((x) => x.d === wd && x.s < e && x.e > s));
@@ -331,6 +335,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   const [audience, setAudience] = useState(initial?.audience || (initial?.id ? [] : defaultAudience.length ? defaultAudience : formationsOf(me)));
   const [subject, setSubject] = useState(initial?.subject || (initial?.id ? '' : defaultSubject));
   const [respectSchedule, setRespectSchedule] = useState(initial?.respectSchedule !== false);
+  const [imAvailable, setImAvailable] = useState(true);
   const [place, setPlace] = useState(initial?.place || '');
   const [deadline, setDeadline] = useState(initial?.deadline || '');
   const [max, setMax] = useState(initial?.max || '');
@@ -365,7 +370,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
     setBusy(true);
     try {
       if (isEdit) await updatePoll(initial.id, data, actorName(me), data.title);
-      else await createPoll(data, me);
+      else await createPoll(data, me, imAvailable);
       onClose();
     } catch (e) { setErr(e.message); }
     setBusy(false);
@@ -385,6 +390,13 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
         <label className="field"><span>Lieu (optionnel)</span><input value={place} onChange={(e) => setPlace(e.target.value)} /></label>
         <label className="field"><span>Répondre avant le</span><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
       </div>
+      {!isEdit && me && me.id !== 'admin' && (
+        <label className="switch">
+          <input type="checkbox" checked={imAvailable} onChange={(e) => setImAvailable(e.target.checked)} />
+          <span><b>Je suis dispo à toutes ces dates</b><br />
+            <small className="muted">Tu es compté(e) « Oui » partout dès la publication. Décoche si tu crées le sondage pour d'autres ; tu peux changer ton vote à tout moment.</small></span>
+        </label>
+      )}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} />
       <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
@@ -393,7 +405,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
       <div className="opt-edit">
         {options.map((o, i) => {
           const s = toMin(o.sh), e = toMin(o.eh);
-          const item = { audience, subject, respectSchedule };
+          const item = { audience, subject, respectSchedule, format };
           const fc = o.date && s !== null && e !== null ? forecast(people, o.date, s, e, { settings, item }) : null;
           const conf = fc && respectSchedule ? conflictsFor(settings, audience, o.date, s, e) : [];
           const hol = o.date && holidayOn(settings, o.date);
@@ -430,7 +442,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
   const act = async (join) => {
     setBusy(true);
     const r = await joinSession(s, me, join);
-    setMsg(r === 'in' ? 'C’est noté, ta place est réservée !' : r === 'wait' ? 'Séance complète : tu es en liste d’attente.' : r === 'freed' ? 'Ta place est libérée, la liste d’attente est prévenue.' : 'Désinscription enregistrée.');
+    setMsg(r === 'in' ? 'C’est noté, ta place est réservée !' : r === 'wait' ? 'Séance complète : tu es en liste d’attente.' : r === 'freed' ? 'Ta place est libérée, la liste d’attente est prévenue.' : canManage ? 'Tu n’es plus inscrit(e). La séance a toujours lieu et tu peux toujours la gérer.' : 'Désinscription enregistrée.');
     setBusy(false);
   };
   const isPerson = me && me.id !== 'admin';
@@ -464,6 +476,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
         <AudiencePill item={s} />
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
+      {!st.cancelled && <SessionInfoBlock s={s} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
       {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}. Elle reste affichée (barrée) dans le planning pour prévenir les inscrits.</p>}
       {canManage && (
         <div className="manage-row">
@@ -533,8 +546,8 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const s = toMin(sh), e0 = toMin(eh);
-  const item = { audience, subject, respectSchedule };
-  const fc = useMemo(() => (date && s !== null && e0 !== null ? forecast(people, date, s, e0, { settings, item }) : null), [people, date, s, e0, settings, audience, subject, respectSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
+  const item = { audience, subject, respectSchedule, format };
+  const fc = useMemo(() => (date && s !== null && e0 !== null ? forecast(people, date, s, e0, { settings, item }) : null), [people, date, s, e0, settings, audience, subject, respectSchedule, format]); // eslint-disable-line react-hooks/exhaustive-deps
   const conf = fc && respectSchedule ? conflictsFor(settings, audience, date, s, e0) : [];
   const hol = date && holidayOn(settings, date);
 

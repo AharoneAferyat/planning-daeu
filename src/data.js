@@ -199,9 +199,13 @@ export async function mergeParticipants(target, source) {
 }
 
 // ---------- Sondages ----------
-export async function createPoll(data, me) {
+// imAvailable : le créateur est compté « Oui » sur toutes les dates (il peut changer ensuite)
+export async function createPoll(data, me, imAvailable = true) {
+  const auto = imAvailable && me.id !== 'admin';
+  const votes = auto ? { [me.id]: Object.fromEntries(data.options.map((o) => [o.id, 'yes'])) } : {};
+  const queue = auto ? Object.fromEntries(data.options.map((o) => [o.id, [me.id]])) : {};
   const ref = await addDoc(collection(db, 'polls'), {
-    ...data, votes: {}, status: 'open', createdBy: me.id, createdByName: `${me.prenom} ${me.nom || ''}`.trim(),
+    ...data, votes, queue, status: 'open', createdBy: me.id, createdByName: `${me.prenom} ${me.nom || ''}`.trim(),
     createdAt: serverTimestamp(),
   });
   await log('poll_create', `${me.prenom} ${me.nom || ''}`.trim(), data.title, { options: data.options.length });
@@ -294,6 +298,13 @@ export async function joinSession(s, me, join) {
   else await log('session_leave', who, s.title, status === 'freed' ? { date, info: 'place libérée, liste d’attente prévenue' } : { date });
   return status;
 }
+// Infos pratiques réservées aux inscrits (lieu, lien visio, consignes)
+export async function saveSessionInfo(s, info, actor) {
+  const clean = { place: (info.place || '').trim(), visio: (info.visio || '').trim(), note: (info.note || '').trim() };
+  await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp() });
+  await log('session_info', actor, s.title, { lieu: clean.place || '—', distanciel: clean.visio || '—', consignes: clean.note || '—' });
+}
+
 // Annuler / rétablir / maintenir malgré le minimum
 export async function cancelSession(s, actor, cancel = true) {
   await updateDoc(doc(db, 'sessions', s.id), cancel ? { cancelled: true, cancelledAt: serverTimestamp(), cancelledBy: actor } : { cancelled: false });

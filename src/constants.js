@@ -68,6 +68,7 @@ export const LOG_TYPES = {
   session_cancel: 'Séance annulée',
   session_restore: 'Séance rétablie',
   session_keep: 'Séance maintenue',
+  session_info: 'Infos de séance',
   session_leave: 'Désinscription séance',
   invite_create: 'Code créé',
   invite_update: 'Code modifié',

@@ -1,5 +1,5 @@
 import { Fragment, useMemo } from 'react';
-import { CalendarCheck, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { CalendarCheck, CalendarX2, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { DAYS_SHORT } from '../constants';
 import { addDays, fmt, isoDate, timeRange, weekStartOf } from '../utils';
 import { coursesAt, holidayOn, SUBJECTS, withoutCourses } from '../formations';
@@ -65,8 +65,8 @@ export default function WeekView({ people, sessions, weekStart, setWeekStart, hi
               {hol && <span className="hm-hol" title={`Vacances de ${hol.label}`}>Vac.</span>}
               {ds.map((s) => (
                 <button key={s.id} className={'hm-sess' + ((s.attendees || []).includes(meId) ? ' in' : '') + (s.cancelled ? ' cancelled' : '')}
-                  onClick={() => onSession(s)} title={`${s.title} · ${fmt(s.s)}–${fmt(s.e)}`}>
-                  <CalendarCheck size={11} /><span>{fmt(s.s)}</span>
+                  onClick={() => onSession(s)} title={`${s.title} · ${fmt(s.s)}–${fmt(s.e)}${s.cancelled ? ' · ANNULÉE' : ''}`}>
+                  {s.cancelled ? <CalendarX2 size={11} /> : <CalendarCheck size={11} />}<span>{s.cancelled ? 'Annulée' : fmt(s.s)}</span>
                 </button>
               ))}
             </div>
@@ -80,12 +80,13 @@ export default function WeekView({ people, sessions, weekStart, setWeekStart, hi
               const n = ps.length;
               const a = n / max;
               const sess = weekSessions.some((s) => !s.cancelled && s.date === dates[d] && s.s < h + 60 && s.e > h);
+              const cancelled = weekSessions.some((s) => s.cancelled && s.date === dates[d] && s.s < h + 60 && s.e > h);
               const mine = meId && ps.some((p) => p.id === meId);
               const hl = hlPerson && ps.some((p) => p.id === hlPerson.id);
               const course = courseOf ? coursesAt(settings, courseOf.formation, courseOf.subjects, dates[d], d, h, h + 60) : [];
               return (
                 <button key={d}
-                  className={'hm-cell' + (n ? '' : ' zero') + (a > 0.55 ? ' dark' : '') + (sess ? ' sess' : '') + (hl ? ' hl' : '') + (dates[d] === todayIso ? ' today' : '') + (course.length ? ' course' : '')}
+                  className={'hm-cell' + (n ? '' : ' zero') + (a > 0.55 ? ' dark' : '') + (sess ? ' sess' : '') + (hl ? ' hl' : '') + (dates[d] === todayIso ? ' today' : '') + (course.length ? ' course' : '') + (cancelled && !sess ? ' sess-x' : '')}
                   style={{ '--a': a, '--hc': hlPerson?.color }}
                   onClick={() => onCell({ d, s: h, e: h + 60, date: dates[d] })}
                   aria-label={`${DAYS_SHORT[d]} ${fmt(h)} : ${n} dispo`}
@@ -106,6 +107,7 @@ export default function WeekView({ people, sessions, weekStart, setWeekStart, hi
         </span>
         <span><i className="lg-me" /> toi</span>
         <span><i className="lg-sess" /> séance prévue</span>
+        {weekSessions.some((s) => s.cancelled) && <span><i className="lg-sess-x" /> séance annulée</span>}
         {courseOf && <span><i className="lg-course" /> {courseOf.label}</span>}
         <span className="muted">Touche une case pour voir qui</span>
       </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, GraduationCap } from 'lucide-react';
-import { courseActive, FORMATIONS, holidayOn, holidaysOf, schedulesOf, SUBJECTS } from '../formations';
+import { courseActive, formationsLabel, formationsOf, FORMATIONS, holidayOn, holidaysOf, schedulesOf, SUBJECTS } from '../formations';
 import { DAYS_SHORT } from '../constants';
 import { fmt, fmtDay, isoDate } from '../utils';
 
@@ -9,8 +9,8 @@ export default function CatBar({ cat, setCat, sub, setSub, settings, me }) {
   const [showSched, setShowSched] = useState(false);
   const fOpts = [['all', 'Toutes'], ...Object.entries(FORMATIONS).map(([k, v]) => [k, v.short])];
   const sOpts = [['all', 'Toutes matières'], ...Object.entries(SUBJECTS).map(([k, v]) => [k, v.label])];
-  const showFor = cat !== 'all' ? cat : me?.formation;
-  const courses = showFor ? (schedulesOf(settings)[showFor] || []).filter((c) => (sub === 'all' || c.subject === sub) && courseActive(settings, c, null)) : [];
+  const showFor = cat !== 'all' ? [cat] : formationsOf(me);
+  const courses = showFor.flatMap((f) => schedulesOf(settings)[f] || []).filter((c) => (sub === 'all' || c.subject === sub) && courseActive(settings, c, null));
   const today = isoDate(new Date());
   const hol = holidayOn(settings, today);
   const nextHol = holidaysOf(settings).find((h) => h.from > today);
@@ -21,7 +21,7 @@ export default function CatBar({ cat, setCat, sub, setSub, settings, me }) {
         <GraduationCap size={18} className="cat-ico" />
         <div className="seg" role="tablist" aria-label="Formation">
           {fOpts.map(([k, l]) => (
-            <button key={k} role="tab" className={'seg-b' + (cat === k ? ' on' : '') + (me?.formation === k ? ' mine' : '')}
+            <button key={k} role="tab" className={'seg-b' + (cat === k ? ' on' : '') + (formationsOf(me).includes(k) ? ' mine' : '')}
               style={FORMATIONS[k] ? { '--c': FORMATIONS[k].color } : undefined} onClick={() => setCat(k)}>{l}</button>
           ))}
         </div>
@@ -32,9 +32,9 @@ export default function CatBar({ cat, setCat, sub, setSub, settings, me }) {
             style={SUBJECTS[k] ? { '--c': SUBJECTS[k].color } : undefined} onClick={() => setSub(k)}>{l}</button>
         ))}
       </div>
-      {(showFor || hol) && (
+      {(showFor.length > 0 || hol) && (
         <button className="cat-info" onClick={() => setShowSched(!showSched)}>
-          {hol ? <b>Vacances de {hol.label}</b> : <b>{FORMATIONS[showFor]?.label}{cat === 'all' ? ' (ta formation)' : ''}</b>}
+          {hol ? <b>Vacances de {hol.label}</b> : <b>{cat !== 'all' ? FORMATIONS[cat]?.label : `DAEU ${formationsLabel(me)}`}{cat === 'all' ? (showFor.length > 1 ? ' (tes formations)' : ' (ta formation)') : ''}</b>}
           {!hol && <span> · {courses.length ? `${courses.length} cours / semaine` : 'pas de cours en présentiel'}</span>}
           <ChevronDown size={14} className={showSched ? 'rot' : ''} />
         </button>

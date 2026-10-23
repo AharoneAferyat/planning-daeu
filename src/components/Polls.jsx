@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  Bell, CalendarCheck, CalendarPlus, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
+  Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
 } from 'lucide-react';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
@@ -10,7 +10,7 @@ import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, t
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 import { placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
-import { audienceLabel, conflictsFor, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
+import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
 
@@ -328,7 +328,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   const [title, setTitle] = useState(initial?.title || 'Séance de révision');
   const [description, setDescription] = useState(initial?.description || '');
   const [format, setFormat] = useState(initial?.format || 'hybride');
-  const [audience, setAudience] = useState(initial?.audience || (initial?.id ? [] : defaultAudience.length ? defaultAudience : me?.formation ? [me.formation] : []));
+  const [audience, setAudience] = useState(initial?.audience || (initial?.id ? [] : defaultAudience.length ? defaultAudience : formationsOf(me)));
   const [subject, setSubject] = useState(initial?.subject || (initial?.id ? '' : defaultSubject));
   const [respectSchedule, setRespectSchedule] = useState(initial?.respectSchedule !== false);
   const [place, setPlace] = useState(initial?.place || '');
@@ -448,9 +448,6 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
   return (
     <Modal title={s.title} onClose={onClose}
       footer={<>
-        {canManage && <ConfirmButton confirmText="Supprimer la séance ?" onConfirm={async () => { await deleteSession(s, actor); onClose(); }}><Trash2 size={16} /></ConfirmButton>}
-        {canManage && !st.cancelled && !st.needsDecision && <ConfirmButton className="btn ghost danger" confirmText="Annuler la séance ?" onConfirm={() => cancelSession(s, actor)}>Annuler</ConfirmButton>}
-        {canManage && st.cancelled && <button className="btn ghost" onClick={() => cancelSession(s, actor, false)}>Rétablir</button>}
         {canManage && <button className="btn ghost" onClick={onEdit}><Pencil size={16} /> Modifier</button>}
         <button className="btn ghost" onClick={ics} title="Ajouter à mon agenda"><CalendarPlus size={16} /></button>
         <span className="grow" />
@@ -467,7 +464,21 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
         <AudiencePill item={s} />
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
-      {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}.</p>}
+      {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}. Elle reste affichée (barrée) dans le planning pour prévenir les inscrits.</p>}
+      {canManage && (
+        <div className="manage-row">
+          {!st.cancelled && !st.needsDecision && (
+            <ConfirmButton className="btn small ghost danger" confirmText="Confirmer l'annulation" onConfirm={() => cancelSession(s, actor)}>
+              <CalendarX2 size={15} /> Annuler la séance
+            </ConfirmButton>
+          )}
+          {st.cancelled && <button className="btn small ghost" onClick={() => cancelSession(s, actor, false)}><RotateCcw size={15} /> Rétablir</button>}
+          <ConfirmButton className="btn small ghost danger" confirmText="Supprimer définitivement ?" onConfirm={async () => { await deleteSession(s, actor); onClose(); }}>
+            <Trash2 size={15} /> Supprimer (erreur)
+          </ConfirmButton>
+        </div>
+      )}
+      {canManage && <p className="muted tiny manage-help"><b>Annuler</b> : la séance reste visible, barrée, et les inscrits sont prévenus. <b>Supprimer</b> : elle disparaît complètement (à utiliser si elle a été créée par erreur{s.pollId ? ' — le sondage d’origine est rouvert' : ''}).</p>}
       {canManage && st.needsDecision && (
         <div className="decision">
           <p><b>Minimum pas atteint :</b> {att.length} inscrit{att.length > 1 ? 's' : ''} pour un minimum de {st.min}. Tu maintiens la séance ?</p>
@@ -509,7 +520,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const [sh, setSh] = useState(toHHMM(base.s ?? 840));
   const [eh, setEh] = useState(toHHMM(base.e ?? 1020));
   const [format, setFormat] = useState(base.format || 'hybride');
-  const [audience, setAudience] = useState(base.audience || (isEdit ? [] : defaultAudience.length ? defaultAudience : me?.formation ? [me.formation] : []));
+  const [audience, setAudience] = useState(base.audience || (isEdit ? [] : defaultAudience.length ? defaultAudience : formationsOf(me)));
   const [subject, setSubject] = useState(base.subject || (isEdit ? '' : defaultSubject));
   const [respectSchedule, setRespectSchedule] = useState(base.respectSchedule !== false);
   const [place, setPlace] = useState(base.place || '');

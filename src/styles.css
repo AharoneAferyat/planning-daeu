@@ -813,3 +813,17 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .test-list { max-height: 50vh; margin-top: 8px; }
 .test-list .who { width: 100%; }
 .alert.tiny { align-items: flex-start; }
+
+/* ---------- Séances annulées ---------- */
+.hm-sess.cancelled { background: color-mix(in srgb, var(--bad) 14%, var(--surface)); color: var(--bad); text-decoration: none; outline: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); }
+.hm-sess { overflow: hidden; }
+@media (min-width: 761px) { .hm-sess.cancelled span { display: inline; font-size: 10px; } }
+@media (max-width: 760px) { .hm-sess.cancelled { padding: 2px 5px; } }
+.hm-cell.sess-x { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--bad) 55%, transparent); background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--bad) 18%, transparent) 0 3px, transparent 3px 8px); }
+.legend .lg-sess-x { width: 18px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--bad) 60%, transparent); background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--bad) 25%, transparent) 0 3px, transparent 3px 7px); }
+.sess-line.cancelled { background: color-mix(in srgb, var(--bad) 9%, var(--surface)); }
+.sess-line.cancelled b { text-decoration: line-through; opacity: .75; }
+.sess-line.cancelled svg { color: var(--bad); }
+.x-tag { font-style: normal; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--bad); margin-right: 6px; }
+.manage-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; }
+.manage-help { margin: 4px 0 12px; }

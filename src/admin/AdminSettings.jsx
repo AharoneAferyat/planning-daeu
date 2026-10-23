@@ -5,6 +5,7 @@ import { fetchAll, log, saveSettings, wipeCollection } from '../data';
 import { download, fmt, fmtDate, hashPin, momentsLabel, totalMinutes, fmtDur } from '../utils';
 import { ConfirmButton, Toast } from '../components/ui';
 import ScheduleEditor from './ScheduleEditor';
+import { formationsLabel } from '../formations';
 
 export default function AdminSettings({ settings, people }) {
   const [appTitle, setAppTitle] = useState(settings.appTitle);
@@ -44,7 +45,7 @@ export default function AdminSettings({ settings, people }) {
     const rows = [head.join(';')];
     for (const p of people) {
       const days = DAYS_SHORT.map((_, d) => (p.slots || []).filter((s) => s.d === d).map((s) => `${fmt(s.s)}-${fmt(s.e)}`).join(' '));
-      rows.push([p.prenom, p.nom, p.formation || '', (p.subjects || []).join(', ') || 'toutes', p.pin, p.freq, momentsLabel(p), FORMATS[p.format]?.short,
+      rows.push([p.prenom, p.nom, formationsLabel(p, false), (p.subjects || []).join(', ') || 'toutes', p.pin, p.freq, momentsLabel(p), FORMATS[p.format]?.short,
         p.format === 'visio' ? '' : DISTANCES[p.distance]?.label, fmtDur(totalMinutes(p)), ...days, p.note,
         fmtDate(p.createdAt), fmtDate(p.updatedAt), p.viaCode].map(esc).join(';'));
     }

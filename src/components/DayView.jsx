@@ -50,9 +50,9 @@ export default function DayView({ people: rawPeople, sessions, weekStart, setWee
 
       {hol && <p className="hol-note">Vacances de {hol.label} : pas de cours ce jour-là.</p>}
       {daySessions.map((s) => (
-        <button key={s.id} className="sess-line" onClick={() => onSession(s)}>
-          <CalendarCheck size={18} />
-          <span><b>{s.title}</b> · {fmt(s.s)}–{fmt(s.e)}</span>
+        <button key={s.id} className={'sess-line' + (s.cancelled ? ' cancelled' : '')} onClick={() => onSession(s)}>
+          {s.cancelled ? <CalendarX2 size={18} /> : <CalendarCheck size={18} />}
+          <span>{s.cancelled && <em className="x-tag">Annulée</em>}<b>{s.title}</b> · {fmt(s.s)}–{fmt(s.e)}</span>
           <span className="muted"><Users size={14} /> {(s.attendees || []).length}</span>
         </button>
       ))}

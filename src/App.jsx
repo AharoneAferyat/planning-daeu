@@ -21,7 +21,7 @@ import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
 import FormationPrompt, { needsFormationPrompt } from './components/FormationPrompt';
 import { isTestId, stopViewAs, viewAsId } from './testmode';
-import { canSee, FORMATIONS, inAudience, subjectOk } from './formations';
+import { canSee, formationsOf, FORMATIONS, inAudience, subjectOk } from './formations';
 import { log as logAction, updateParticipant } from './data';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 
@@ -97,7 +97,7 @@ function PublicApp() {
 
   // Vue par formation / matière (les heures de cours sont retirées des dispos dans chaque vue)
   const catPeople = useMemo(() => (people || [])
-    .filter((p) => (cat === 'all' || p.formation === cat) && (sub === 'all' || subjectOk({ subject: sub }, p.subjects))), [people, cat, sub]);
+    .filter((p) => (cat === 'all' || formationsOf(p).includes(cat)) && (sub === 'all' || subjectOk({ subject: sub }, p.subjects))), [people, cat, sub]);
   const filtered = useMemo(() => catPeople.filter((p) => matchFilters(p, filters)), [catPeople, filters]);
   const seePolls = useMemo(() => (polls || []).filter((p) => canSee(p, me)), [polls, me]);
   const seeSessions = useMemo(() => (sessions || []).filter((s) => canSee(s, me)), [sessions, me]);
@@ -209,7 +209,7 @@ function PublicApp() {
       </nav>
 
       <main className="content">
-        {!me.formation && (
+        {!formationsOf(me).length && (
           <div className="al-card missing-form">
             <div className="grow">
               <b>Indique ta formation DAEU</b>
@@ -217,7 +217,7 @@ function PublicApp() {
               <div className="row-btns">
                 {Object.entries(FORMATIONS).map(([k, v]) => (
                   <button key={k} className="btn small" style={{ color: v.color }} onClick={async () => {
-                    await updateParticipant(me.id, { formation: k });
+                    await updateParticipant(me.id, { formations: [k], formation: k });
                     logAction('participant_update', `${me.prenom} ${me.nom}`, `${me.prenom} ${me.nom}`, { changes: [{ field: 'Formation', from: '—', to: v.label }] });
                     setCat(k); setToast(`Formation enregistrée : ${v.label}`);
                   }}>{v.short}</button>
@@ -243,7 +243,7 @@ function PublicApp() {
         )}
 
         {view === 'semaine' && <WeekView people={filtered} sessions={viewSessions} settings={settings}
-          courseOf={cat !== 'all' ? { formation: cat, subjects: sub === 'all' ? null : [sub], label: 'cours' } : me.formation ? { formation: me.formation, subjects: me.subjects, label: 'tes cours' } : null} weekStart={weekStart} setWeekStart={setWeekStart}
+          courseOf={cat !== 'all' ? { formation: cat, subjects: sub === 'all' ? null : [sub], label: 'cours' } : formationsOf(me).length ? { formation: formationsOf(me), subjects: me.subjects, label: 'tes cours' } : null} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} onCell={setCell} onSession={setSessionOpen} meId={me.id} />}
         {view === 'jours' && <DayView people={filtered} sessions={viewSessions} settings={settings} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} setHighlight={setHighlight} meId={me.id} onSession={setSessionOpen} />}

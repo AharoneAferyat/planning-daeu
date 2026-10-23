@@ -8,6 +8,10 @@ export const FORMATIONS = {
 };
 export const FORMATION_KEYS = Object.keys(FORMATIONS);
 
+// Une personne peut suivre plusieurs formations (ex. Soir + Hybride). Compatible avec l'ancien champ unique.
+export const formationsOf = (p) => (Array.isArray(p?.formations) && p.formations.length ? p.formations : p?.formation ? [p.formation] : []);
+export const formationsLabel = (p, short = true) => formationsOf(p).map((f) => (short ? FORMATIONS[f]?.short : FORMATIONS[f]?.label) || f).join(' + ');
+
 export const SUBJECTS = {
   maths: { label: 'Maths', color: '#E11D48' },
   physique: { label: 'Physique', color: '#2563EB' },
@@ -62,7 +66,8 @@ const subjectsOk = (course, subjects) => !subjects?.length || subjects.includes(
 
 // Cours d'une formation (et éventuellement de certaines matières) qui chevauchent [s, e]
 export function coursesAt(settings, formation, subjects, iso, d, s, e) {
-  return (schedulesOf(settings)[formation] || [])
+  const fs = Array.isArray(formation) ? formation : [formation];
+  return fs.flatMap((f) => schedulesOf(settings)[f] || [])
     .filter((x) => x.d === d && x.s < e && x.e > s && subjectsOk(x, subjects) && courseActive(settings, x, iso));
 }
 
@@ -74,12 +79,12 @@ export function conflictsFor(settings, formations, iso, s, e) {
 }
 
 // Une personne n'est en cours que pendant SES matières (toutes si elle n'en a pas choisi)
-export const personCoursesAt = (p, settings, iso, d, s, e) => (p.formation ? coursesAt(settings, p.formation, p.subjects, iso, d, s, e) : []);
+export const personCoursesAt = (p, settings, iso, d, s, e) => coursesAt(settings, formationsOf(p), p.subjects, iso, d, s, e);
 
 // Dispos réelles : on retire les heures de cours de la personne.
 // Avec une date (iso + jour d) : seulement ce jour-là, en tenant compte des vacances et des dates de cours.
 export function withoutCourses(p, settings, iso = null, d = null) {
-  const courses = (schedulesOf(settings)[p.formation] || [])
+  const courses = formationsOf(p).flatMap((f) => schedulesOf(settings)[f] || [])
     .filter((x) => subjectsOk(x, p.subjects) && (d === null || x.d === d) && courseActive(settings, x, iso));
   if (!courses.length) return p;
   const out = [];
@@ -102,13 +107,13 @@ export function withoutCourses(p, settings, iso = null, d = null) {
 
 // ---------- Public d'un sondage / d'une séance ----------
 // audience = formations visées (vide = toutes) ; subject = matière visée (facultatif)
-export const inAudience = (item, formation) => !item?.audience?.length || (formation && item.audience.includes(formation));
+export const inAudience = (item, formations) => !item?.audience?.length || [].concat(formations || []).some((f) => item.audience.includes(f));
 export const subjectOk = (item, subjects) => !item?.subject || !subjects?.length || subjects.includes(item.subject);
-export const personInAudience = (item, p) => inAudience(item, p.formation) && subjectOk(item, p.subjects);
+export const personInAudience = (item, p) => inAudience(item, formationsOf(p)) && subjectOk(item, p.subjects);
 
 // Ce que la personne voit : son public, ce qu'elle a créé, tout pour l'admin
 export const canSee = (item, me) => !me || me.id === 'admin' || item.createdBy === me.id
-  || ((!me.formation || inAudience(item, me.formation)) && subjectOk(item, me.subjects));
+  || ((!formationsOf(me).length || inAudience(item, formationsOf(me))) && subjectOk(item, me.subjects));
 
 export const audienceLabel = (item) => {
   const f = !item?.audience?.length ? 'Toutes formations' : item.audience.map((x) => FORMATIONS[x]?.short || x).join(' + ');

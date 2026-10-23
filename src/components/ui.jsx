@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapPin, Moon, Shuffle, Sun, Sunrise, SunMedium, Users, Video, X } from 'lucide-react';
 import { DISTANCES, FORMATS } from '../constants';
 import { initials, momentsLabel, momentsOf, shortName } from '../utils';
-import { FORMATIONS } from '../formations';
+import { formationsOf, FORMATIONS } from '../formations';
 
 export const MOMENT_ICON = { matin: Sunrise, aprem: Sun, soir: Moon, journee: SunMedium, egal: Shuffle };
 
@@ -120,9 +120,9 @@ export function PersonBadges({ p, compact }) {
   const dist = p.format !== 'visio' ? DISTANCES[p.distance] : null;
   return (
     <span className={'badges' + (compact ? ' compact' : '')}>
-      {FORMATIONS[p.formation] && (
-        <span className="badge form" style={{ '--c': FORMATIONS[p.formation].color }} title={FORMATIONS[p.formation].label}>{FORMATIONS[p.formation].short}</span>
-      )}
+      {formationsOf(p).filter((f) => FORMATIONS[f]).map((f) => (
+        <span key={f} className="badge form" style={{ '--c': FORMATIONS[f].color }} title={FORMATIONS[f].label}>{FORMATIONS[f].short}</span>
+      ))}
       <span className="badge freq" style={{ '--lvl': (p.freq || 1) / 7 }} title={`Veut bosser ${p.freq || 1} fois / semaine`}>
         {p.freq || 1}×{!compact && <small>/sem</small>}
       </span>

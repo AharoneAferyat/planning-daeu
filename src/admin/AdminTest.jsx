@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Eye, FlaskConical, Search, Trash2 } from 'lucide-react';
 import { deleteParticipant, saveTestProfile, useTestProfile } from '../data';
-import { audienceLabel, canSee, FORMATIONS, SUBJECTS } from '../formations';
+import { audienceLabel, canSee, formationsLabel, formationsOf, SUBJECTS } from '../formations';
+import FormationPick from '../components/FormationPick';
 import { startViewAs, TEST_ID } from '../testmode';
 import { normName } from '../utils';
 import { Avatar, Chips, ConfirmButton, Toast } from '../components/ui';
@@ -13,10 +14,10 @@ export default function AdminTest({ people, polls, sessions }) {
   const [subjects, setSubjects] = useState(null);
   const [q, setQ] = useState('');
   const [toast, setToast] = useState('');
-  const f = formation ?? test?.formation ?? 'soir';
+  const fs = formation ?? (test ? formationsOf(test) : ['soir']);
   const subs = subjects ?? test?.subjects ?? [];
 
-  const preview = { id: TEST_ID, formation: f, subjects: subs };
+  const preview = { id: TEST_ID, formations: fs, subjects: subs };
   const seen = polls.filter((p) => p.status !== 'closed' && canSee(p, preview));
   const hidden = polls.filter((p) => p.status !== 'closed' && !canSee(p, preview));
   const list = useMemo(() => {
@@ -25,7 +26,7 @@ export default function AdminTest({ people, polls, sessions }) {
   }, [people, q]);
 
   const open = async () => {
-    await saveTestProfile({ formation: f, subjects: subs });
+    await saveTestProfile({ formations: fs, formation: fs[0] || null, subjects: subs });
     startViewAs(TEST_ID);
   };
 
@@ -35,14 +36,8 @@ export default function AdminTest({ people, polls, sessions }) {
         <h4 className="card-title"><FlaskConical size={18} /> Profil test (invisible pour les autres)</h4>
         <p className="muted tiny">Un faux participant « Profil Test » pour essayer le site comme n'importe qui : voter, s'inscrire aux séances, modifier ses dispos… Ses votes et inscriptions n'apparaissent pour personne d'autre.</p>
 
-        <div className="field"><span>Formation du profil test</span>
-          <div className="formation-pick">
-            {Object.entries(FORMATIONS).map(([k, v]) => (
-              <button type="button" key={k} className={'fpick' + (f === k ? ' on' : '')} style={{ '--c': v.color }} onClick={() => setFormation(k)}>
-                <b>{v.short}</b><small>{v.hint}</small>
-              </button>
-            ))}
-          </div>
+        <div className="field"><span>Formation(s) du profil test</span>
+          <FormationPick value={fs} onChange={setFormation} />
         </div>
         <div className="field"><span>Matières <small className="muted">(rien = toutes)</small></span>
           <Chips multi value={subs} onChange={setSubjects}
@@ -75,7 +70,7 @@ export default function AdminTest({ people, polls, sessions }) {
             <button key={p.id} className="who" onClick={() => startViewAs(p.id)}>
               <Avatar p={p} size={30} />
               <span className="grow">{p.prenom} <b>{p.nom}</b></span>
-              <span className="muted tiny">{FORMATIONS[p.formation]?.short || 'sans formation'}</span>
+              <span className="muted tiny">{formationsLabel(p) || 'sans formation'}</span>
             </button>
           ))}
         </div>

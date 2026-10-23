@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarCheck, Clock, Ticket, Users, Vote } from 'lucide
 import { DAYS, DISTANCES, FORMATS, LOG_TYPES, MOMENTS } from '../constants';
 import { inviteStatus } from '../data';
 import { DecisionCard, decisionsFor } from '../components/Alerts';
+import { isOpenPoll } from '../places';
 import { ADMIN_ME } from '../config';
 import { formationsOf, FORMATIONS, SUBJECTS } from '../formations';
 import { bestSlots, duplicatePairs, momentsOf, fmt, fmtDur, isPast, timeAgo, toDate, totalMinutes } from '../utils';
@@ -31,7 +32,7 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
   const changes7 = logs.filter((l) => (toDate(l.at)?.getTime() || 0) > week && l.type.startsWith('participant_')).length;
   const activeCodes = invites.filter((i) => inviteStatus(i).key === 'ok').length;
   const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
-  const openPolls = polls.filter((p) => p.status !== 'closed');
+  const openPolls = polls.filter(isOpenPoll);
   const dups = useMemo(() => duplicatePairs(people), [people]);
   const top = useMemo(() => bestSlots(people, 2, 60).slice(0, 4), [people]);
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));

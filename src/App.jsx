@@ -21,6 +21,7 @@ import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
 import FormationPrompt, { needsFormationPrompt } from './components/FormationPrompt';
 import { isTestId, stopViewAs, viewAsId } from './testmode';
+import { isOpenPoll } from './places';
 import { canSee, formationsOf, FORMATIONS, inAudience, subjectOk } from './formations';
 import { log as logAction, updateParticipant } from './data';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
@@ -104,7 +105,7 @@ function PublicApp() {
   const inView = (x) => (cat === 'all' || inAudience(x, cat)) && (sub === 'all' || !x.subject || x.subject === sub);
   const viewPolls = useMemo(() => seePolls.filter(inView), [seePolls, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
   const viewSessions = useMemo(() => seeSessions.filter(inView), [seeSessions, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pendingVotes = useMemo(() => (me ? seePolls.filter((p) => p.status !== 'closed' && !p.votes?.[me.id]).length : 0), [seePolls, me]);
+  const pendingVotes = useMemo(() => (me ? seePolls.filter((p) => isOpenPoll(p) && !p.votes?.[me.id]).length : 0), [seePolls, me]);
 
   if (peopleErr) return <div className="center-screen"><p className="err">Erreur de connexion à la base : {peopleErr}</p></div>;
   if (!settings || !people || !polls || !sessions || !codeChecked) return <Spinner />;
@@ -233,7 +234,7 @@ function PublicApp() {
           <span><b>{catPeople.length}</b> inscrit{catPeople.length > 1 ? 's' : ''}</span>
           {filtered.length !== catPeople.length && <span><b>{filtered.length}</b> avec les filtres</span>}
           <span><b>{viewSessions.filter((s) => s.date >= isoDate(new Date()) && !s.cancelled).length}</b> séance(s) à venir</span>
-          <span><b>{viewPolls.filter((p) => p.status !== 'closed').length}</b> sondage(s) en cours</span>
+          <span><b>{viewPolls.filter(isOpenPoll).length}</b> sondage(s) en cours</span>
         </div>
 
         <AlertsBar sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />

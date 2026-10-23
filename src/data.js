@@ -242,6 +242,13 @@ export async function closePoll(poll, option, extra, actor) {
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
   return sRef.id;
 }
+// Annuler / rétablir un sondage (il reste visible, barré ; les votants Oui / Peut-être sont prévenus)
+export async function cancelPoll(poll, actor, cancel = true) {
+  await updateDoc(doc(db, 'polls', poll.id), cancel
+    ? { status: 'cancelled', cancelledBy: actor, cancelledAt: serverTimestamp() }
+    : { status: 'open', cancelledBy: deleteField(), cancelledAt: deleteField() });
+  await log(cancel ? 'poll_cancel' : 'poll_restore', actor, poll.title, { votants: Object.keys(poll.votes || {}).length });
+}
 export async function reopenPoll(poll, actor) {
   if (poll.sessionId) { try { await deleteDoc(doc(db, 'sessions', poll.sessionId)); } catch { /* */ } }
   await updateDoc(doc(db, 'polls', poll.id), { status: 'open', finalOptionId: deleteField(), sessionId: deleteField() });

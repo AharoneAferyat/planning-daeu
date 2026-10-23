@@ -1,14 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
-  Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
+  Ban, Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
 } from 'lucide-react';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
-  cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
+  cancelPoll, cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
-import { placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
+import { isOpenPoll, placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
 import SessionInfoBlock from './SessionInfo';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personInAudience, SUBJECTS, withoutCourses } from '../formations';
@@ -40,13 +40,30 @@ function scoreOf(poll, optId) {
 }
 
 // =================== Vue principale ===================
+// Catégorie repliable (repliée par défaut)
+function Fold({ title, count, children }) {
+  const [open, setOpen] = useState(false);
+  if (!count) return null;
+  return (
+    <>
+      <button className="link sec-title muted-title" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <ChevronDown size={16} className={open ? 'rot' : ''} /> {title} ({count})
+      </button>
+      {open && children}
+    </>
+  );
+}
+
 export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm, onPollTouched, settings }) {
-  const [showPast, setShowPast] = useState(false);
   const today = isoDate(new Date());
-  const upcoming = sessions.filter((s) => !isPast(s.date, s.e));
+  const upcoming = sessions.filter((s) => !isPast(s.date, s.e) && !s.cancelled);
+  const cancelledSessions = sessions.filter((s) => !isPast(s.date, s.e) && s.cancelled);
   const past = sessions.filter((s) => isPast(s.date, s.e)).reverse();
-  const open = polls.filter((p) => p.status !== 'closed');
+  const open = polls.filter(isOpenPoll);
   const closed = polls.filter((p) => p.status === 'closed');
+  const cancelledPolls = polls.filter((p) => p.status === 'cancelled');
+  const card = (p, extra = {}) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)} {...extra} />;
+  const row = (s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} isToday={s.date === today} />;
 
   return (
     <div className="polls">
@@ -56,32 +73,27 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
       </div>
 
       <h3 className="sec-title"><CalendarCheck size={18} /> Séances à venir</h3>
-      {upcoming.length === 0 ? <p className="muted">Aucune séance prévue. Lance un sondage ou planifie directement.</p> : (
-        <div className="sess-list">
-          {upcoming.map((s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} isToday={s.date === today} />)}
-        </div>
-      )}
+      {upcoming.length === 0 ? <p className="muted">Aucune séance prévue. Lance un sondage ou planifie directement.</p>
+        : <div className="sess-list">{upcoming.map(row)}</div>}
 
       <h3 className="sec-title"><Vote size={18} /> Sondages en cours</h3>
       {open.length === 0 ? <Empty icon={Vote} title="Aucun sondage en cours">Propose quelques dates et laisse chacun voter.</Empty>
-        : open.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)} onTouched={onPollTouched} />)}
+        : open.map((p) => card(p, { onTouched: onPollTouched }))}
 
-      {closed.length > 0 && (
-        <>
-          <h3 className="sec-title"><Lock size={18} /> Sondages terminés</h3>
-          {closed.map((p) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)}
-            onSession={() => { const s = sessions.find((x) => x.id === p.sessionId); if (s) onSession(s); }} />)}
-        </>
-      )}
-
-      {past.length > 0 && (
-        <>
-          <button className="link sec-title" onClick={() => setShowPast(!showPast)}>
-            <ChevronDown size={16} className={showPast ? 'rot' : ''} /> Séances passées ({past.length})
-          </button>
-          {showPast && <div className="sess-list past">{past.map((s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} />)}</div>}
-        </>
-      )}
+      <div className="folds">
+        <Fold title="Sondages terminés" count={closed.length}>
+          {closed.map((p) => card(p, { onSession: () => { const s = sessions.find((x) => x.id === p.sessionId); if (s) onSession(s); } }))}
+        </Fold>
+        <Fold title="Sondages annulés" count={cancelledPolls.length}>
+          {cancelledPolls.map((p) => card(p))}
+        </Fold>
+        <Fold title="Séances annulées" count={cancelledSessions.length}>
+          <div className="sess-list">{cancelledSessions.map(row)}</div>
+        </Fold>
+        <Fold title="Séances terminées" count={past.length}>
+          <div className="sess-list past">{past.map(row)}</div>
+        </Fold>
+      </div>
     </div>
   );
 }
@@ -129,7 +141,8 @@ function optionGroups(poll, o, allPeople, settings) {
 }
 
 function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, settings }) {
-  const closed = poll.status === 'closed';
+  const closed = poll.status === 'closed' || poll.status === 'cancelled';
+  const isCancelled = poll.status === 'cancelled';
   const myVotes = (me && poll.votes?.[me.id]) || {};
   const [draft, setDraft] = useState(myVotes);
   const [busy, setBusy] = useState(false);
@@ -164,7 +177,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
   const detailData = detail && optionGroups(poll, detail, people, settings);
 
   return (
-    <div className={'card poll' + (closed ? ' closed' : '') + (canVote && !iVoted ? ' todo' : '')} id={`poll-${poll.id}`}>
+    <div className={'card poll' + (closed ? ' closed' : '') + (isCancelled ? ' cancelled' : '') + (canVote && !iVoted ? ' todo' : '')} id={`poll-${poll.id}`}>
       <div className="poll-head">
         <div className="grow">
           {canVote && !iVoted && <span className="pill warn todo-pill">À toi de voter</span>}
@@ -180,7 +193,6 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
         {canManage && (
           <div className="poll-tools">
             {!closed && <button className="icon-btn" onClick={onEdit} title="Modifier"><Pencil size={17} /></button>}
-            <ConfirmButton className="icon-btn danger" confirmText="Sûr ?" onConfirm={() => deletePoll(poll, actorName(me))}><Trash2 size={17} /></ConfirmButton>
           </div>
         )}
       </div>
@@ -241,6 +253,14 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
         })}
       </div>
 
+      {isCancelled && <p className="alert danger-alert"><b>Sondage annulé</b>{poll.cancelledBy ? ` par ${poll.cancelledBy}` : ''}. Ceux qui avaient voté Oui ou Peut-être ont été prévenus.</p>}
+      {canManage && (
+        <div className="manage-row">
+          {!closed && <ConfirmButton className="btn small ghost danger" confirmText="Confirmer l'annulation" onConfirm={() => cancelPoll(poll, actorName(me))}><Ban size={15} /> Annuler le sondage</ConfirmButton>}
+          {isCancelled && <button className="btn small ghost" onClick={() => cancelPoll(poll, actorName(me), false)}><RotateCcw size={15} /> Rétablir</button>}
+          <ConfirmButton className="btn small ghost danger" confirmText="Supprimer définitivement ?" onConfirm={() => deletePoll(poll, actorName(me))}><Trash2 size={15} /> Supprimer (erreur)</ConfirmButton>
+        </div>
+      )}
       <div className="poll-foot">
         {canVote && (
           <span className={'vote-status' + (saved ? ' ok' : '')}>
@@ -249,8 +269,8 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
         )}
         <span className="grow" />
         {!closed && canManage && <button className="btn" onClick={() => setClosing(true)}><Lock size={16} /> Clôturer</button>}
-        {closed && <button className="btn small" onClick={onSession}><CalendarCheck size={15} /> Voir la séance</button>}
-        {closed && canManage && <ConfirmButton className="btn small ghost" confirmText="Rouvrir (supprime la séance) ?" onConfirm={() => reopenPoll(poll, actorName(me))}><RotateCcw size={15} /> Rouvrir</ConfirmButton>}
+        {closed && !isCancelled && <button className="btn small" onClick={onSession}><CalendarCheck size={15} /> Voir la séance</button>}
+        {closed && !isCancelled && canManage && <ConfirmButton className="btn small ghost" confirmText="Rouvrir (supprime la séance) ?" onConfirm={() => reopenPoll(poll, actorName(me))}><RotateCcw size={15} /> Rouvrir</ConfirmButton>}
       </div>
 
       {detail && (

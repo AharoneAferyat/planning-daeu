@@ -863,3 +863,9 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 /* concision : le titre de section suffit dans la fenêtre, et le titre de la carte dit déjà « infos importantes » */
 .al-info-tag { display: none; }
 .modal-body .al-c-cancel .al-cancel { display: none; }
+.poll.cancelled { opacity: .75; }
+.poll.cancelled h4 { text-decoration: line-through; }
+.muted-title { color: var(--muted); }
+.modal-body .al-c-cancel .al-cancel { display: inline; }
+.folds { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.folds .sec-title { margin-top: 4px; }

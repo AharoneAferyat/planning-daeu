@@ -59,6 +59,8 @@ export const LOG_TYPES = {
   poll_vote: 'Vote',
   poll_close: 'Sondage clôturé',
   poll_reopen: 'Sondage rouvert',
+  poll_cancel: 'Sondage annulé',
+  poll_restore: 'Sondage rétabli',
   poll_delete: 'Sondage supprimé',
   session_create: 'Séance créée',
   session_update: 'Séance modifiée',

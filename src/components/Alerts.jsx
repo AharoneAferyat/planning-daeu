@@ -3,7 +3,7 @@ import { Bell, CalendarCheck, Check, ChevronRight, Clock, EyeOff, MapPin, Vote, 
 import { cancelSession, joinSession, keepSession } from '../data';
 import { addDays, fmt, fmtDay, fmtDayShort, isPast, isoDate, ls, ss } from '../utils';
 import { AvatarStack, Modal } from './ui';
-import { decisionFor, placesLabel, sessionState } from '../places';
+import { decisionFor, isOpenPoll, placesLabel, sessionState } from '../places';
 import { hiddenId } from '../testmode';
 import { hasInfo, InfoLines } from './SessionInfo';
 import { ConfirmButton } from './ui';
@@ -60,6 +60,31 @@ function useCancelled(sessions, polls, meId) {
   return useMemo(() => cancelledFor(sessions, polls, meId), [sessions, polls, meId, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
+// Sondages annulés : prévenir ceux qui avaient voté Oui / Peut-être (une seule fois, jusqu'à « Compris »)
+export function cancelledPollsFor(polls, meId) {
+  const seen = readList('ge_pollx_seen');
+  return (polls || []).filter((p) => p.status === 'cancelled' && !seen.includes(p.id)
+    && Object.values(p.votes?.[meId] || {}).some((v) => v === 'yes' || v === 'maybe'));
+}
+function ackPollCancel(id) {
+  ls.set('ge_pollx_seen', JSON.stringify([...new Set([...readList('ge_pollx_seen'), id])]));
+  window.dispatchEvent(new Event('ge-cancel-seen'));
+}
+export function PollCancelCard({ p, onOpen }) {
+  return (
+    <div className="al-card al-c-cancel">
+      <div className="grow">
+        <span className="al-cancel">Sondage annulé</span>
+        <button className="al-sess-main" onClick={onOpen}>
+          <b className="strike">{p.title}</b>
+          <span className="muted tiny">{p.cancelledBy ? `annulé par ${p.cancelledBy} · ` : ''}tu avais répondu Oui / Peut-être</span>
+        </button>
+      </div>
+      <button className="btn small" onClick={() => ackPollCancel(p.id)}><Check size={14} /> Compris</button>
+    </div>
+  );
+}
+
 export function CancelCard({ s, me, onOpen }) {
   const st = sessionState(s, me.id);
   const why = st.status === 'in' ? 'tu étais inscrit(e)' : st.status === 'wait' ? 'tu étais en liste d’attente' : 'tu avais répondu au sondage';
@@ -83,7 +108,7 @@ export function usePendingPolls(polls, meId) {
   const [hidden, setHidden] = useState(() => readList('ge_poll_hidden'));
   // Tous les sondages ouverts non masqués ; « pas encore voté » en premier
   const openPolls = useMemo(
-    () => (polls || []).filter((p) => p.status !== 'closed' && !hidden.includes(p.id))
+    () => (polls || []).filter((p) => isOpenPoll(p) && !hidden.includes(p.id))
       .sort((a, b) => (a.votes?.[meId] ? 1 : 0) - (b.votes?.[meId] ? 1 : 0)),
     [polls, meId, hidden],
   );
@@ -171,7 +196,7 @@ export function InfoCard({ s, onOpen }) {
 /*
   ORDRE DE PRIORITÉ des rappels (fenêtre d'accueil et bandeau) :
   1. Infos importantes d'une séance où je suis inscrit(e)
-  2. Séance annulée (j'étais inscrit, en attente, ou j'avais voté Oui / Peut-être)
+  2. Annulations : séance (j'étais inscrit, en attente, ou j'avais voté Oui / Peut-être) ou sondage (j'avais voté Oui / Peut-être)
   3. Place libérée (je suis en liste d'attente)
   4. À décider (je suis le créateur et le minimum n'est pas atteint)
   5. Séances à venir (3 prochains jours, sinon la prochaine)
@@ -181,13 +206,14 @@ export function InfoCard({ s, onOpen }) {
 function useAlerts(sessions, polls, me) {
   const infos = useInfos(sessions, me.id);
   const cancelled = useCancelled(sessions, polls, me.id);
+  const cancelledPolls = useMemo(() => cancelledPollsFor(polls, me.id), [polls, me.id, cancelled]); // eslint-disable-line react-hooks/exhaustive-deps
   const all = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
   const freed = all.filter((s) => freedFor(s, me.id));
   const reminders = all.filter((s) => !freedFor(s, me.id));
   const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
   const votedPolls = openPolls.filter((p) => p.votes?.[me.id]);
-  return { infos, cancelled, freed, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
+  return { infos, cancelled, cancelledPolls, freed, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
 }
 
 // Ligne compacte : titre + 1 ligne d'info + bouton
@@ -213,7 +239,7 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls 
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (a.infos.length || a.cancelled.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
+    if (a.infos.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
     const showRem = (a.freed.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
     const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     if (showRem || showPolls) setOpen(true);
@@ -237,9 +263,10 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls 
           {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={openS} />)}
         </Section>
       )}
-      {a.cancelled.length > 0 && (
-        <Section title={a.cancelled.length > 1 ? 'Séances annulées' : 'Séance annulée'}>
+      {a.cancelled.length + a.cancelledPolls.length > 0 && (
+        <Section title="Annulations">
           {a.cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={openS} />)}
+          {a.cancelledPolls.map((p) => <PollCancelCard key={p.id} p={p} onOpen={() => { close(); onGoPolls(p.id); }} />)}
         </Section>
       )}
       {a.freed.length > 0 && (
@@ -276,11 +303,12 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls })
   const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
   const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
-  if (!a.infos.length && !a.cancelled.length && !a.decisions.length && !sessLines.length && !a.openPolls.length) return null;
+  if (!a.infos.length && !a.cancelled.length && !a.cancelledPolls.length && !a.decisions.length && !sessLines.length && !a.openPolls.length) return null;
   return (
     <div className="al-bar">
       {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
       {a.cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={onSession} />)}
+      {a.cancelledPolls.map((p) => <PollCancelCard key={p.id} p={p} onOpen={() => onGoPolls(p.id)} />)}
       {a.freed.length > 0 && (
         <div className="al-card al-c-sess">
           <div className="grow al-list">{a.freed.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={onSession} compact />)}</div>

@@ -40,3 +40,6 @@ export const placesLabel = (s) => {
 
 // La séance attend une décision de ce créateur
 export const decisionFor = (s, meId) => (s.createdBy === meId || meId === 'admin') && sessionState(s, meId).needsDecision;
+
+// Sondage ouvert = ni clôturé ni annulé
+export const isOpenPoll = (p) => p.status !== 'closed' && p.status !== 'cancelled';

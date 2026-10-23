@@ -4,6 +4,7 @@ import { deleteParticipant, saveTestProfile, useTestProfile } from '../data';
 import { audienceLabel, canSee, formationsLabel, formationsOf, SUBJECTS } from '../formations';
 import FormationPick from '../components/FormationPick';
 import { startViewAs, TEST_ID } from '../testmode';
+import { isOpenPoll } from '../places';
 import { normName } from '../utils';
 import { Avatar, Chips, ConfirmButton, Toast } from '../components/ui';
 
@@ -18,8 +19,8 @@ export default function AdminTest({ people, polls, sessions }) {
   const subs = subjects ?? test?.subjects ?? [];
 
   const preview = { id: TEST_ID, formations: fs, subjects: subs };
-  const seen = polls.filter((p) => p.status !== 'closed' && canSee(p, preview));
-  const hidden = polls.filter((p) => p.status !== 'closed' && !canSee(p, preview));
+  const seen = polls.filter((p) => isOpenPoll(p) && canSee(p, preview));
+  const hidden = polls.filter((p) => isOpenPoll(p) && !canSee(p, preview));
   const list = useMemo(() => {
     const n = normName(q);
     return people.filter((p) => !n || normName(`${p.prenom}${p.nom}`).includes(n)).slice(0, 30);

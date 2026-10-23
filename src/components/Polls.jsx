@@ -106,7 +106,8 @@ function SessionRow({ s, people, me, onClick, isToday }) {
   const att = (s.attendees || []).map((id) => people.find((p) => p.id === id)).filter(Boolean);
   const inIt = me && (s.attendees || []).includes(me.id);
   return (
-    <button className={'sess-row' + (inIt ? ' in' : '') + (isToday ? ' today' : '') + (s.cancelled ? ' cancelled' : '')} onClick={onClick}>
+    <button className={'sess-row' + (inIt ? ' in' : '') + (isToday ? ' today' : '') + (s.cancelled ? ' cancelled' : '') + (s.subject && SUBJECTS[s.subject] ? ' has-sc' : '')} onClick={onClick}
+      style={s.subject && SUBJECTS[s.subject] ? { '--sc': SUBJECTS[s.subject].color } : undefined}>
       <div className="sr-date">
         <b>{parseIso(s.date).getDate()}</b>
         <span>{parseIso(s.date).toLocaleDateString('fr-FR', { month: 'short' })}</span>
@@ -116,12 +117,14 @@ function SessionRow({ s, people, me, onClick, isToday }) {
         <div className="muted tiny">{fmtDay(s.date, { weekday: 'long' })} · {fmt(s.s)}–{fmt(s.e)} · {SESSION_FORMATS[s.format] || s.format}{s.place ? ` · ${s.place}` : ''}</div>
         <AudiencePill item={s} />
         <AvatarStack people={att} max={8} size={22} label={placesLabel(s)} />
+        <div className="sr-pills">
+          {s.cancelled && <span className="pill bad">Annulée</span>}
+          {!s.cancelled && sessionState(s, me?.id).needsDecision && <span className="pill warn">Sous le minimum</span>}
+          {inIt && !s.cancelled && <span className="pill ok"><Check size={13} /> J'y vais</span>}
+          {!inIt && me && sessionState(s, me.id).status === 'wait' && <span className="pill warn">Attente n°{sessionState(s, me.id).rank}</span>}
+          {!inIt && me && sessionState(s, me.id).status === 'out' && sessionState(s, me.id).full && <span className="pill bad">Complet</span>}
+        </div>
       </div>
-      {s.cancelled && <span className="pill bad">Annulée</span>}
-      {!s.cancelled && sessionState(s, me?.id).needsDecision && <span className="pill warn">Sous le minimum</span>}
-      {inIt && !s.cancelled && <span className="pill ok"><Check size={13} /> J'y vais</span>}
-      {!inIt && me && sessionState(s, me.id).status === 'wait' && <span className="pill warn">Attente n°{sessionState(s, me.id).rank}</span>}
-      {!inIt && me && sessionState(s, me.id).status === 'out' && sessionState(s, me.id).full && <span className="pill bad">Complet</span>}
     </button>
   );
 }
@@ -184,7 +187,8 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
   const detailData = detail && optionGroups(poll, detail, people, settings);
 
   return (
-    <div className={'card poll' + (closed ? ' closed' : '') + (isCancelled ? ' cancelled' : '') + (canVote && !iVoted ? ' todo' : '')} id={`poll-${poll.id}`}>
+    <div className={'card poll' + (closed ? ' closed' : '') + (isCancelled ? ' cancelled' : '') + (canVote && !iVoted ? ' todo' : '') + (poll.subject && SUBJECTS[poll.subject] ? ' has-sc' : '')}
+      id={`poll-${poll.id}`} style={poll.subject && SUBJECTS[poll.subject] ? { '--sc': SUBJECTS[poll.subject].color } : undefined}>
       <div className="poll-head">
         <div className="grow">
           {canVote && !iVoted && <span className="pill warn todo-pill">À toi de voter</span>}

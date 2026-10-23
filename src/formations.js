@@ -14,7 +14,7 @@ export const formationsLabel = (p, short = true) => formationsOf(p).map((f) => (
 
 export const SUBJECTS = {
   maths: { label: 'Maths', color: '#E11D48' },
-  physique: { label: 'Physique', color: '#2563EB' },
+  physique: { label: 'Physique', color: '#0E7490' },
   chimie: { label: 'Chimie', color: '#D97706' },
   bio: { label: 'Biologie', color: '#16A34A' },
   francais: { label: 'Français', color: '#7C3AED' },

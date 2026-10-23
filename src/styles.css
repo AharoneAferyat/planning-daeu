@@ -922,3 +922,24 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .pcom-reply-box .pcom-input input { min-height: 38px; font-size: 14px; }
 .pcom-reply-box .pcom-input .btn { min-height: 38px; }
 .pcom-reply-box .pcom-input .btn.ghost { padding: 0 8px; font-size: 12.5px; min-width: 0; }
+
+/* ---------- Cartes de sondage : couleur de matière + séparation nette ---------- */
+.card.poll { --sc: #CBD5E1; padding-top: 0; overflow: hidden; border-left: 6px solid var(--sc); box-shadow: 0 2px 10px rgba(15, 23, 42, .08); }
+[data-theme="dark"] .card.poll { --sc: #475069; }
+.polls > .card.poll { margin-top: 10px; }
+.polls > .card.poll + .card.poll { margin-top: 22px; }
+.poll-head { margin: 0 -16px; padding: 12px 16px 12px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.card.poll.has-sc .poll-head { background: color-mix(in srgb, var(--sc) 13%, var(--surface)); border-bottom-color: color-mix(in srgb, var(--sc) 35%, var(--border)); }
+.card.poll.has-sc .poll-head h4 { color: color-mix(in srgb, var(--sc) 70%, var(--text)); }
+.card.poll.todo { border-top-color: color-mix(in srgb, var(--warn) 55%, transparent); border-right-color: color-mix(in srgb, var(--warn) 55%, transparent); border-bottom-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.sess-row { border-left: 5px solid #CBD5E1; }
+[data-theme="dark"] .sess-row { border-left-color: #475069; }
+.sess-row.has-sc { border-left-color: var(--sc); background: color-mix(in srgb, var(--sc) 6%, var(--surface)); }
+.sess-row.has-sc.today { background: color-mix(in srgb, var(--accent-2) 10%, var(--surface)); }
+.sr-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.sr-pills:empty { display: none; }
+.sess-row { align-items: flex-start; }
+.sess-row .sr-date { align-self: center; }
+[data-theme="dark"] .card.poll.has-sc .poll-head { background: color-mix(in srgb, var(--sc) 22%, var(--surface)); }
+[data-theme="dark"] .card.poll.has-sc .poll-head h4 { color: color-mix(in srgb, var(--sc) 45%, #fff); }
+[data-theme="dark"] .card.poll.has-sc .poll-head .pill.aud { color: color-mix(in srgb, var(--c) 45%, #fff); }

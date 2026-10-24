@@ -43,3 +43,17 @@ export const decisionFor = (s, meId) => (s.createdBy === meId || meId === 'admin
 
 // Sondage ouvert = ni clôturé ni annulé
 export const isOpenPoll = (p) => p.status !== 'closed' && p.status !== 'cancelled';
+
+// « Peut-être » du sondage d'origine qui n'ont pas encore confirmé ou refusé.
+// Les séances créées avant cette fonction n'ont pas la liste : on la retrouve dans le sondage (rattrapage).
+export function maybesOf(s, polls) {
+  let base = s.maybes;
+  if (!base && s.pollId) {
+    const p = (polls || []).find((x) => x.id === s.pollId);
+    const opt = p && (p.finalOptionId || (p.options || []).find((o) => o.date === s.date && o.s === s.s)?.id);
+    base = opt ? Object.keys(p.votes || {}).filter((id) => p.votes[id]?.[opt] === 'maybe') : [];
+  }
+  const done = new Set([...(s.attendees || []), ...(s.waitlist || []), ...(s.maybeAnswered || [])]);
+  return (base || []).filter((id) => !done.has(id) && !hiddenId(id));
+}
+export const isMaybe = (s, polls, meId) => !!meId && !s.cancelled && maybesOf(s, polls).includes(meId);

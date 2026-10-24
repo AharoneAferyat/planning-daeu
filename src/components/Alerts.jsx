@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, CalendarCheck, Check, ChevronRight, Clock, EyeOff, MapPin, Vote, X } from 'lucide-react';
-import { cancelSession, joinSession, keepSession } from '../data';
+import { answerMaybe, cancelSession, joinSession, keepSession } from '../data';
 import { addDays, fmt, fmtDay, fmtDayShort, isPast, isoDate, ls, ss } from '../utils';
 import { AvatarStack, Modal } from './ui';
-import { decisionFor, isOpenPoll, placesLabel, sessionState } from '../places';
+import { decisionFor, isMaybe, isOpenPoll, placesLabel, sessionState } from '../places';
 import { hiddenId } from '../testmode';
 import { hasInfo, InfoLines } from './SessionInfo';
 import { ConfirmButton } from './ui';
@@ -209,11 +209,12 @@ function useAlerts(sessions, polls, me) {
   const cancelledPolls = useMemo(() => cancelledPollsFor(polls, me.id), [polls, me.id, cancelled]); // eslint-disable-line react-hooks/exhaustive-deps
   const all = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
   const freed = all.filter((s) => freedFor(s, me.id));
-  const reminders = all.filter((s) => !freedFor(s, me.id));
+  const toConfirm = useMemo(() => (sessions || []).filter((s) => !isPast(s.date, s.e) && isMaybe(s, polls, me.id)), [sessions, polls, me.id]);
+  const reminders = all.filter((s) => !freedFor(s, me.id) && !toConfirm.includes(s));
   const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
   const votedPolls = openPolls.filter((p) => p.votes?.[me.id]);
-  return { infos, cancelled, cancelledPolls, freed, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
+  return { infos, cancelled, cancelledPolls, freed, toConfirm, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
 }
 
 // Ligne compacte : titre + 1 ligne d'info + bouton
@@ -236,13 +237,13 @@ function PollRow({ p, total, onGo, onHide }) {
 export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls, skip }) {
   const a = useAlerts(sessions, polls, me);
   const total = people.length;
-  const remKey = 'ge_rem_seen_' + [...a.decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...a.freed.map((s) => s.id + ':libre'), ...a.reminders.map((s) => s.id)].join(',');
+  const remKey = 'ge_rem_seen_' + [...a.toConfirm.map((s) => 'm' + s.id), ...a.decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...a.freed.map((s) => s.id + ':libre'), ...a.reminders.map((s) => s.id)].join(',');
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (skip) return;
     if (a.infos.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
-    const showRem = (a.freed.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
+    const showRem = (a.freed.length || a.toConfirm.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
     const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     if (showRem || showPolls) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -276,6 +277,11 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
           {a.freed.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={openS} compact />)}
         </Section>
       )}
+      {a.toConfirm.length > 0 && (
+        <Section title="Tu avais dit « Peut-être »">
+          {a.toConfirm.map((s) => <MaybeCard key={s.id} s={s} me={me} onOpen={openS} />)}
+        </Section>
+      )}
       {a.decisions.length > 0 && (
         <Section title="À décider">
           {a.decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={openS} />)}
@@ -305,7 +311,7 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls })
   const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
   const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
-  if (!a.infos.length && !a.cancelled.length && !a.cancelledPolls.length && !a.decisions.length && !sessLines.length && !a.openPolls.length) return null;
+  if (!a.infos.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length) return null;
   return (
     <div className="al-bar">
       {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
@@ -316,6 +322,7 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls })
           <div className="grow al-list">{a.freed.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={onSession} compact />)}</div>
         </div>
       )}
+      {a.toConfirm.map((s) => <MaybeCard key={s.id} s={s} me={me} onOpen={onSession} />)}
       {a.decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={onSession} />)}
       {a.reminders.length > 0 && !closedRem && (
         <div className="al-card al-c-sess">
@@ -336,6 +343,28 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls })
           <span className="al-go">{a.pendingPolls.length ? 'Répondre' : 'Voir'} <ChevronRight size={16} /></span>
         </button>
       )}
+    </div>
+  );
+}
+
+// ---------- « Peut-être » du sondage : confirmer sa venue ----------
+export function MaybeCard({ s, me, onOpen }) {
+  const st = sessionState(s, me.id);
+  const [busy, setBusy] = useState(false);
+  const go = async (yes) => { setBusy(true); await answerMaybe(s, me, yes); setBusy(false); };
+  return (
+    <div className="al-card al-c-maybe">
+      <div className="grow">
+        <span className="al-maybe">Tu viens ?</span>
+        <button className="al-sess-main" onClick={() => onOpen(s)}>
+          <b>{s.title}</b>
+          <span className="muted tiny">{dayLabel(s.date)} · {fmt(s.s)}–{fmt(s.e)} · {placesLabel(s)}</span>
+        </button>
+        <div className="row-btns">
+          <button className="btn small primary" disabled={busy} onClick={() => go(true)}><Check size={14} /> {st.full ? 'Oui (attente)' : 'Je viens'}</button>
+          <button className="btn small" disabled={busy} onClick={() => go(false)}>Je ne viens pas</button>
+        </div>
+      </div>
     </div>
   );
 }

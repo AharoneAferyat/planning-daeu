@@ -5,13 +5,13 @@ import {
 import { arrayUnion } from 'firebase/firestore';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
-  cancelPoll, cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
+  answerMaybe, cancelPoll, cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
-import { isOpenPoll, placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
+import { isMaybe, isOpenPoll, maybesOf, placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
-import SessionInfoBlock, { InfoFields, infoData, markInfoSeen } from './SessionInfo';
+import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfoSeen } from './SessionInfo';
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
@@ -67,7 +67,7 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
   const closed = polls.filter((p) => p.status === 'closed');
   const cancelledPolls = polls.filter((p) => p.status === 'cancelled');
   const card = (p, extra = {}) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)} {...extra} />;
-  const row = (s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} isToday={s.date === today} />;
+  const row = (s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} isToday={s.date === today} maybe={isMaybe(s, polls, me?.id)} />;
 
   return (
     <div className="polls">
@@ -102,7 +102,7 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
   );
 }
 
-function SessionRow({ s, people, me, onClick, isToday }) {
+function SessionRow({ s, people, me, onClick, isToday, maybe }) {
   const att = (s.attendees || []).map((id) => people.find((p) => p.id === id)).filter(Boolean);
   const inIt = me && (s.attendees || []).includes(me.id);
   return (
@@ -121,6 +121,7 @@ function SessionRow({ s, people, me, onClick, isToday }) {
           {s.cancelled && <span className="pill bad">Annulée</span>}
           {!s.cancelled && sessionState(s, me?.id).needsDecision && <span className="pill warn">Sous le minimum</span>}
           {inIt && !s.cancelled && <span className="pill ok"><Check size={13} /> J'y vais</span>}
+          {maybe && <span className="pill warn">Peut-être : à confirmer</span>}
           {!inIt && me && sessionState(s, me.id).status === 'wait' && <span className="pill warn">Attente n°{sessionState(s, me.id).rank}</span>}
           {!inIt && me && sessionState(s, me.id).status === 'out' && sessionState(s, me.id).full && <span className="pill bad">Complet</span>}
         </div>
@@ -346,7 +347,7 @@ function ClosePollModal({ poll, scores, me, onClose }) {
   return (
     <Modal title="Clôturer le sondage" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy || !optId} onClick={go}><CalendarCheck size={16} /> Ajouter au planning</button></>}>
-      <p className="muted">Choisis la date retenue. Elle devient une séance dans le planning : les « Oui » sont inscrits dans leur ordre d'arrivée (au-delà des places max, ils passent en liste d'attente). Les « Peut-être » reçoivent le rappel et peuvent s'inscrire.</p>
+      <p className="muted">Choisis la date retenue. Elle devient une séance dans le planning : les « Oui » sont inscrits dans leur ordre d'arrivée (au-delà des places max, ils passent en liste d'attente). Les « Peut-être » restent rattachés à la séance : ils confirment ou non leur venue (et ne voient les infos pratiques qu'une fois inscrits).</p>
       <div className="radio-list">
         {sorted.map((o) => {
           const sc = scores[o.id];
@@ -489,11 +490,13 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
 }
 
 // =================== Séances ===================
-export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
+export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = [] }) {
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const st = sessionState(s, me?.id);
   const att = st.att.map((id) => byId[id]).filter(Boolean);
   const waiting = st.wait.map((id) => byId[id]).filter(Boolean);
+  const maybes = maybesOf(s, polls).map((id) => byId[id]).filter(Boolean);
+  const iMaybe = !st.cancelled && me && maybes.some((p) => p.id === me.id);
   const canManage = isAdmin || (me && s.createdBy === me.id);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -575,10 +578,22 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose }) {
           {st.free > 0 ? <><b>Une place s'est libérée !</b> Le premier qui la prend est inscrit.</> : <>Tu es <b>n°{st.rank}</b> sur la liste d'attente. Tu seras prévenu(e) si une place se libère.</>}
         </p>
       )}
+      {iMaybe && st.status === 'out' && (
+        <div className="maybe-box">
+          <p><b>Tu avais répondu « Peut-être ».</b> Tu confirmes ta venue ?{hasAnyInfo(s) ? ' Les infos pratiques (lieu, lien…) s’affichent une fois inscrit(e).' : ''}</p>
+          <div className="row-btns">
+            <button className="btn primary" disabled={busy} onClick={async () => { setBusy(true); const r = await answerMaybe(s, me, true); setMsg(r === 'in' ? 'C’est noté, ta place est réservée !' : r === 'wait' ? 'Séance complète : tu es en liste d’attente.' : ''); setBusy(false); }}>
+              <Check size={16} /> {st.full ? 'Je viens (liste d’attente)' : 'Je viens'}
+            </button>
+            <button className="btn" disabled={busy} onClick={async () => { setBusy(true); await answerMaybe(s, me, false); setMsg('C’est noté, tu ne viens pas.'); setBusy(false); }}>Je ne viens pas</button>
+          </div>
+        </div>
+      )}
       {msg && <p className="alert ok-alert">{msg}</p>}
       <PeopleGroups meId={me?.id} groups={[
         { label: st.max ? 'Places réservées' : 'Participants', color: '#16A34A', people: att, showEmpty: true },
         { label: 'Liste d’attente', color: '#0EA5E9', people: waiting, extra: (p) => `n°${waiting.indexOf(p) + 1}` },
+        { label: 'Peut-être — pas encore confirmé', color: VOTE.maybe.color, people: maybes },
       ]} />
     </Modal>
   );

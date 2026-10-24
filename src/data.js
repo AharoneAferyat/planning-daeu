@@ -232,12 +232,14 @@ export async function closePoll(poll, option, extra, actor) {
   const max = Number(poll.max) || null; // fixé par le sondage
   const min = Number(poll.min) || null;
   const { inn: attendees, wait: waitlist } = splitPlaces(yesOrder(poll, option.id), max);
+  // Les « Peut-être » restent rattachés à la séance : ils doivent confirmer (et ne voient les infos qu'après)
+  const maybes = Object.keys(poll.votes || {}).filter((id) => poll.votes[id]?.[option.id] === 'maybe');
   const sRef = await addDoc(collection(db, 'sessions'), {
     title: poll.title, date: option.date, s: option.s, e: option.e,
     format: extra.format || poll.format || 'hybride', place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
     ...(extra.infoData || {}),
-    attendees, waitlist, max, min, audience: poll.audience || [], subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
+    attendees, waitlist, maybes, max, min, audience: poll.audience || [], subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp() });
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
@@ -326,6 +328,16 @@ export async function saveSessionInfo(s, info, actor) {
   const clean = { place: (info.place || '').trim(), visio: (info.visio || '').trim(), note: (info.note || '').trim() };
   await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp() });
   await log('session_info', actor, s.title, { lieu: clean.place || '—', distanciel: clean.visio || '—', consignes: clean.note || '—' });
+}
+
+// Réponse d'un « Peut-être » : il vient (inscription ou liste d'attente) ou il ne vient pas
+export async function answerMaybe(s, me, yes) {
+  let r = 'no';
+  if (yes) r = await joinSession(s, me, true);
+  if (r === 'cancelled') return r;
+  await updateDoc(doc(db, 'sessions', s.id), { maybeAnswered: arrayUnion(me.id) });
+  if (!yes) await log('session_maybe_no', `${me.prenom} ${me.nom || ''}`.trim(), s.title, { date: `${fmtDayShort(s.date)} ${fmt(s.s)}` });
+  return r;
 }
 
 // Annuler / rétablir / maintenir malgré le minimum

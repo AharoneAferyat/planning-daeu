@@ -296,7 +296,7 @@ function PublicApp() {
       {sessionOpen && (() => {
         const live = sessions.find((s) => s.id === sessionOpen.id);
         if (!live) return null;
-        return <SessionSheet s={live} people={people} me={me} isAdmin={false} onClose={() => setSessionOpen(null)}
+        return <SessionSheet s={live} people={people} me={me} polls={polls || []} isAdmin={false} onClose={() => setSessionOpen(null)}
           onEdit={() => { setSessionForm({ initial: live }); setSessionOpen(null); }} />;
       })()}
       {pollForm && <PollForm initial={pollForm.initial} prefill={pollForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}

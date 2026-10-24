@@ -943,3 +943,7 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 [data-theme="dark"] .card.poll.has-sc .poll-head { background: color-mix(in srgb, var(--sc) 22%, var(--surface)); }
 [data-theme="dark"] .card.poll.has-sc .poll-head h4 { color: color-mix(in srgb, var(--sc) 45%, #fff); }
 [data-theme="dark"] .card.poll.has-sc .poll-head .pill.aud { color: color-mix(in srgb, var(--c) 45%, #fff); }
+.al-maybe { font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #D97706; letter-spacing: .03em; }
+.al-card.al-c-maybe { border-color: color-mix(in srgb, #F59E0B 45%, var(--border)); background: color-mix(in srgb, #F59E0B 8%, var(--surface)); }
+.maybe-box { padding: 12px; border-radius: 12px; margin: 8px 0; border: 1px solid color-mix(in srgb, #F59E0B 50%, var(--border)); background: color-mix(in srgb, #F59E0B 9%, var(--surface)); }
+.maybe-box p { margin: 0 0 8px; font-size: 14px; }

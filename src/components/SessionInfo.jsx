@@ -68,3 +68,45 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
     </div>
   );
 }
+
+// Champs « infos importantes » réutilisables (clôture de sondage, création de séance)
+export function InfoFields({ format = 'hybride', value, onChange }) {
+  const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
+  return (
+    <div className="info-box editing info-fields">
+      <h4><Info size={16} /> Infos importantes <small>(visibles uniquement par les inscrits, facultatif : modifiables plus tard)</small></h4>
+      {needsPlace(format) && (
+        <label className="field"><span>Lieu {format === 'hybride' ? '(partie présentielle)' : ''}</span>
+          <input value={value.place || ''} onChange={set('place')} placeholder="Ex : BU Sainte-Barbe, salle 2, 2e étage" maxLength={200} />
+        </label>
+      )}
+      {needsVisio(format) && (
+        <label className="field"><span>Moyen à distance {format === 'hybride' ? '(partie visio)' : ''}</span>
+          <input value={value.visio || ''} onChange={set('visio')} placeholder="Ex : lien Meet / Discord / Zoom" maxLength={300} />
+        </label>
+      )}
+      <label className="field"><span>Consignes</span>
+        <textarea rows={2} value={value.note || ''} onChange={set('note')} placeholder="Ex : apporter les annales 2024, code d'entrée…" maxLength={400} />
+      </label>
+    </div>
+  );
+}
+
+// Données à enregistrer avec la séance (rien si tout est vide)
+export function infoData(format, v) {
+  const info = {
+    place: needsPlace(format) ? (v.place || '').trim() : '',
+    visio: needsVisio(format) ? (v.visio || '').trim() : '',
+    note: (v.note || '').trim(),
+  };
+  return info.place || info.visio || info.note ? { info, infoVersion: 1, infoAt: new Date() } : {};
+}
+
+// Celui qui saisit les infos n'a pas besoin d'être alerté de ses propres infos
+export function markInfoSeen(id) {
+  try {
+    const k = 'ge_info_seen';
+    const list = JSON.parse(localStorage.getItem(k) || '[]');
+    localStorage.setItem(k, JSON.stringify([...new Set([...list, `${id}:1`])]));
+  } catch { /* */ }
+}

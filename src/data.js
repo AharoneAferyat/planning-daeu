@@ -236,6 +236,7 @@ export async function closePoll(poll, option, extra, actor) {
     title: poll.title, date: option.date, s: option.s, e: option.e,
     format: extra.format || poll.format || 'hybride', place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
+    ...(extra.infoData || {}),
     attendees, waitlist, max, min, audience: poll.audience || [], subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp() });

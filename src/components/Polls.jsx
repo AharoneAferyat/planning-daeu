@@ -11,7 +11,7 @@ import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, t
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 import { isOpenPoll, placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
-import SessionInfoBlock from './SessionInfo';
+import SessionInfoBlock, { InfoFields, infoData, markInfoSeen } from './SessionInfo';
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
@@ -333,12 +333,14 @@ function ClosePollModal({ poll, scores, me, onClose }) {
   const sorted = [...poll.options].sort((a, b) => scores[b.id].score - scores[a.id].score);
   const [optId, setOptId] = useState(sorted[0]?.id);
   const [format, setFormat] = useState(poll.format || 'hybride');
-  const [place, setPlace] = useState(poll.place || '');
+  const [info, setInfo] = useState({ place: poll.place || '' });
   const [notify, setNotify] = useState(true);
   const [busy, setBusy] = useState(false);
   const go = async () => {
     setBusy(true);
-    await closePoll(poll, poll.options.find((o) => o.id === optId), { format, place, notify }, actorName(me));
+    const extra = infoData(format, info);
+    const id = await closePoll(poll, poll.options.find((o) => o.id === optId), { format, notify, infoData: extra }, actorName(me));
+    if (extra.info) markInfoSeen(id);
     setBusy(false); onClose();
   };
   return (
@@ -357,14 +359,12 @@ function ClosePollModal({ poll, scores, me, onClose }) {
           );
         })}
       </div>
-      <div className="grid2">
-        <label className="field"><span>Format</span>
-          <select value={format} onChange={(e) => setFormat(e.target.value)}>
-            {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </label>
-        <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="BU, chez Lucas, lien Meet…" /></label>
-      </div>
+      <label className="field"><span>Format</span>
+        <select value={format} onChange={(e) => setFormat(e.target.value)}>
+          {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </label>
+      <InfoFields format={format} value={info} onChange={setInfo} />
       <p className="places-fixed">
         <b>Places :</b> {poll.max ? `${poll.max} max (fixé par le sondage : au-delà, liste d'attente)` : 'illimitées (tout le monde pourra rejoindre)'}
         {poll.min ? <> · <b>minimum {poll.min}</b></> : ''}
@@ -596,6 +596,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const [subject, setSubject] = useState(base.subject || (isEdit ? '' : defaultSubject));
   const [respectSchedule, setRespectSchedule] = useState(base.respectSchedule !== false);
   const [place, setPlace] = useState(base.place || '');
+  const [info, setInfo] = useState({});
   const [note, setNote] = useState(base.note || '');
   const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
   const [notify, setNotify] = useState(base.notify !== false);
@@ -626,7 +627,12 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
     setBusy(true);
     try {
       if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
-      else { const id = await createSession(data, me); setCreated({ ...data, id }); }
+      else {
+        const extra = infoData(format, info);
+        const id = await createSession({ ...data, ...extra }, me);
+        if (extra.info) markInfoSeen(id);
+        setCreated({ ...data, id });
+      }
     } catch (er) { setErr(er.message); }
     setBusy(false);
   };
@@ -647,8 +653,9 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
             {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
-        <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>
+        {isEdit && <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>}
       </div>
+      {!isEdit && <InfoFields format={format} value={info} onChange={setInfo} />}
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
       {(conf.length > 0 || hol) && <p className="oe-warn"><ConflictPills conf={conf} hol={hol} /></p>}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />

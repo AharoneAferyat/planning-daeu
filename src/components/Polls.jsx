@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Ban, Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
+  AlertTriangle, Ban, MessageCircle, Bell, CalendarCheck, CalendarPlus, CalendarX2, Check, ChevronDown, ChevronRight, Clock, Lock, MapPin, Pencil, Plus, RotateCcw, Trash2, Trophy, Users, Vote,
 } from 'lucide-react';
 import { arrayUnion } from 'firebase/firestore';
 import { SESSION_FORMATS, VOTE } from '../constants';
@@ -15,7 +15,8 @@ import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfo
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
-import { SessionChatBlock } from './Chat';
+import { isSessionMember, openChat, SessionChatBlock } from './Chat';
+import { sessionConvId } from '../data';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personCoursesAt, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
@@ -123,6 +124,7 @@ function SessionRow({ s, people, me, onClick, isToday, maybe }) {
           {!s.cancelled && sessionState(s, me?.id).needsDecision && <span className="pill warn">Sous le minimum</span>}
           {inIt && !s.cancelled && <span className="pill ok"><Check size={13} /> J'y vais</span>}
           {maybe && <span className="pill warn">Peut-être : à confirmer</span>}
+          {!s.cancelled && isSessionMember(s, me?.id) && <span className="pill chat-pill" role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openChat(sessionConvId(s.id)); }}><MessageCircle size={13} /> Groupe</span>}
           {!inIt && me && sessionState(s, me.id).status === 'wait' && <span className="pill warn">Attente n°{sessionState(s, me.id).rank}</span>}
           {!inIt && me && sessionState(s, me.id).status === 'out' && sessionState(s, me.id).full && <span className="pill bad">Complet</span>}
         </div>

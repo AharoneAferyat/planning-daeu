@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Megaphone, MessageCircle, Plus, Search, Send, Trash2, Users, X } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown, Megaphone, MessageCircle, Plus, Search, Send, Trash2, Users, X } from 'lucide-react';
 import { dmConvId, deleteMessage, postAnnounce, sendMessage, sessionConvId, useMessages } from '../data';
-import { addDays, fmt, fmtDay, isoDate, isPast, ls, normName, timeAgo } from '../utils';
+import { fmt, fmtDay, isoDate, isPast, ls, normName, parseIso, timeAgo } from '../utils';
 import { announceMessage, shareWhatsApp } from '../share';
 import { hiddenId } from '../testmode';
 import { Avatar } from './ui';
@@ -33,14 +33,18 @@ export function useChatList(convs, sessions, people, me) {
     if (!me || !convs || !sessions) return [];
     const read = readMap();
     const byConv = Object.fromEntries(convs.map((c) => [c.id, c]));
-    const limitIso = isoDate(addDays(new Date(), -14));
+    const DAY = 86400000;
+    const now = Date.now();
     const byId = Object.fromEntries((people || []).map((p) => [p.id, p]));
     const items = [];
     for (const s of sessions) {
-      if (!isSessionMember(s, me.id) || s.date < limitIso) continue;
+      if (!isSessionMember(s, me.id)) continue;
       const id = sessionConvId(s.id); const c = byConv[id];
+      // Archivé 24 h après la fin de la séance… ou après le dernier message (chaque message relance les 24 h)
+      const endAt = parseIso(s.date).getTime() + (s.e || 0) * 60000;
+      const archived = now > Math.max(endAt, c?.lastAt || 0) + DAY;
       items.push({ id, type: 'session', s, title: s.title, sub: `${fmtDay(s.date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${fmt(s.s)}${s.cancelled ? ' · annulée' : ''}`,
-        members: sessionMembers(s), c, lastAt: c?.lastAt || 0 });
+        members: sessionMembers(s), c, lastAt: c?.lastAt || 0, archived });
     }
     for (const c of convs) {
       if (c.type !== 'dm' || !(c.members || []).includes(me.id)) continue;
@@ -63,10 +67,35 @@ export function ChatButton({ list, onClick }) {
   );
 }
 
-// ---------- Fenêtre de messagerie (plein écran sur téléphone) ----------
+// Écran large (PC / tablette) : deux colonnes
+function useWide() {
+  const q = '(min-width: 761px)';
+  const [wide, setWide] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false));
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const m = window.matchMedia(q); const f = () => setWide(m.matches);
+    m.addEventListener?.('change', f); return () => m.removeEventListener?.('change', f);
+  }, []);
+  return wide;
+}
+
+// ---------- Bouton flottant (téléphone) : bien visible, avec le nombre de non-lus ----------
+export function ChatFab({ list, onClick }) {
+  const n = list.filter((x) => x.unread).length;
+  return (
+    <button className={'chat-fab' + (n ? ' has-unread' : '')} onClick={onClick} aria-label="Messages">
+      <MessageCircle size={22} />
+      <span>{n ? `${n} non lu${n > 1 ? 's' : ''}` : 'Messages'}</span>
+      {n > 0 && <i className="chat-fab-dot" />}
+    </button>
+  );
+}
+
+// ---------- Fenêtre de messagerie : plein écran sur téléphone, deux colonnes sur PC ----------
 export default function ChatPanel({ initialConv, list, people, me, onClose, onSession }) {
   const [conv, setConv] = useState(initialConv || '');
   const [picking, setPicking] = useState(false);
+  const wide = useWide();
   const byId = useMemo(() => Object.fromEntries(people.map((p) => [p.id, p])), [people]);
   useEffect(() => { setConv(initialConv || ''); }, [initialConv]);
   useEffect(() => { const f = (e) => e.key === 'Escape' && onClose(); window.addEventListener('keydown', f); return () => window.removeEventListener('keydown', f); }, [onClose]);
@@ -76,38 +105,76 @@ export default function ChatPanel({ initialConv, list, people, me, onClose, onSe
     const other = byId[conv.slice(3).split('_').find((x) => x !== me.id)];
     if (other) current = { id: conv, type: 'dm', other, title: `${other.prenom} ${other.nom || ''}`.trim(), members: [me.id, other.id] };
   }
+  const pick = (p) => { setPicking(false); setConv(dmConvId(me.id, p.id)); };
 
+  const listPane = picking ? <PeoplePicker people={people} me={me} onBack={() => setPicking(false)} onPick={pick} /> : (
+    <>
+      <div className="chat-top">
+        <b className="grow">Messages</b>
+        {!wide && <button className="icon-btn" onClick={onClose} aria-label="Fermer"><X size={20} /></button>}
+      </div>
+      <div className="chat-scroll">
+        <button className="btn primary chat-new" onClick={() => setPicking(true)}><Plus size={16} /> Nouveau message privé</button>
+        <p className="muted tiny chat-hint">Pas de notification : pense à passer voir tes messages. Les groupes de séance se créent tout seuls avec les inscrits.</p>
+        <ListSection title="Groupes de séance" items={list.filter((x) => x.type === 'session' && !x.archived)} byId={byId} onOpen={setConv} activeId={current?.id}
+          empty="Inscris-toi à une séance pour rejoindre son groupe." />
+        <ListSection title="Messages privés" items={list.filter((x) => x.type === 'dm')} byId={byId} onOpen={setConv} activeId={current?.id}
+          empty="Aucun message privé pour l’instant." />
+        <ArchivedSection items={list.filter((x) => x.archived)} byId={byId} onOpen={setConv} activeId={current?.id} />
+      </div>
+    </>
+  );
+  const convPane = current
+    ? <Conversation key={current.id} item={current} me={me} byId={byId} wide={wide} onBack={() => setConv('')} onClose={onClose} onSession={onSession} />
+    : (
+      <div className="chat-empty">
+        <MessageCircle size={40} />
+        <b>Choisis une conversation</b>
+        <span className="muted">ou écris à quelqu’un avec « Nouveau message privé ».</span>
+      </div>
+    );
+
+  if (wide) {
+    return (
+      <div className="chat-back" onClick={onClose}>
+        <div className="chat-wrap wide" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          <div className="chat-side">{listPane}</div>
+          <div className="chat-main">
+            {!current && <div className="chat-top"><span className="grow" /><button className="icon-btn" onClick={onClose} aria-label="Fermer"><X size={20} /></button></div>}
+            {convPane}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <div className="chat-wrap" role="dialog" aria-modal="true">{current ? convPane : listPane}</div>;
+}
+
+// Groupes archivés : repliés, toujours consultables ; un nouveau message les fait revenir
+function ArchivedSection({ items, ...rest }) {
+  const [open, setOpen] = useState(false);
+  if (!items.length) return null;
   return (
-    <div className="chat-wrap" role="dialog" aria-modal="true">
-      {current ? <Conversation key={current.id} item={current} me={me} byId={byId} onBack={() => setConv('')} onClose={onClose} onSession={onSession} />
-        : picking ? <PeoplePicker people={people} me={me} onBack={() => setPicking(false)} onPick={(p) => { setPicking(false); setConv(dmConvId(me.id, p.id)); }} />
-          : (
-            <>
-              <div className="chat-top">
-                <b className="grow">Messages</b>
-                <button className="icon-btn" onClick={onClose} aria-label="Fermer"><X size={20} /></button>
-              </div>
-              <div className="chat-scroll">
-                <button className="btn primary chat-new" onClick={() => setPicking(true)}><Plus size={16} /> Nouveau message privé</button>
-                <p className="muted tiny chat-hint">Pas de notification : pense à passer voir tes messages. Les groupes de séance se créent tout seuls avec les inscrits.</p>
-                <ListSection title="Groupes de séance" items={list.filter((x) => x.type === 'session')} byId={byId} onOpen={setConv}
-                  empty="Inscris-toi à une séance pour rejoindre son groupe." />
-                <ListSection title="Messages privés" items={list.filter((x) => x.type === 'dm')} byId={byId} onOpen={setConv}
-                  empty="Aucun message privé pour l’instant." />
-              </div>
-            </>
-          )}
-    </div>
+    <section className="chat-sec chat-arch">
+      <button className="chat-arch-head" onClick={() => setOpen(!open)}>
+        <Archive size={15} /> Archivés <span className="pcom-n">{items.length}</span>
+        <ChevronDown size={15} className={'grow-end' + (open ? ' rot' : '')} />
+      </button>
+      {open && <>
+        <p className="muted tiny">Séances terminées depuis plus de 24 h. Un nouveau message remet le groupe dans la liste.</p>
+        <ListSection title="" items={items} {...rest} empty="" />
+      </>}
+    </section>
   );
 }
 
-function ListSection({ title, items, byId, onOpen, empty }) {
+function ListSection({ title, items, byId, onOpen, empty, activeId }) {
   return (
     <section className="chat-sec">
-      <h4>{title}</h4>
+      {title && <h4>{title}</h4>}
       {!items.length && <p className="muted tiny">{empty}</p>}
       {items.map((it) => (
-        <button key={it.id} className={'chat-item' + (it.unread ? ' unread' : '')} onClick={() => onOpen(it.id)}>
+        <button key={it.id} className={'chat-item' + (it.unread ? ' unread' : '') + (it.id === activeId ? ' active' : '')} onClick={() => onOpen(it.id)}>
           {it.type === 'dm' ? <Avatar p={it.other} size={38} /> : <span className="chat-gico" style={{ '--sc': it.s?.color }}><Users size={18} /></span>}
           <span className="grow ci-main">
             <span className="ci-top"><b>{it.title}</b>{it.c?.lastAt ? <span className="muted tiny">{timeAgo(it.c.lastAt)}</span> : null}</span>
@@ -143,7 +210,7 @@ function PeoplePicker({ people, me, onBack, onPick }) {
   );
 }
 
-function Conversation({ item, me, byId, onBack, onClose, onSession }) {
+function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
   const msgs = useMessages(item.id);
   const [text, setText] = useState('');
   const [announce, setAnnounce] = useState(false);
@@ -153,7 +220,7 @@ function Conversation({ item, me, byId, onBack, onClose, onSession }) {
   const end = useRef(null);
   const s = item.s;
   const isMember = item.type === 'dm' || isSessionMember(s, me.id);
-  const canAnnounce = s && s.createdBy === me.id;
+  const canAnnounce = s && s.createdBy === me.id && !s.cancelled && !isPast(s.date, s.e);
 
   useEffect(() => { if (msgs) { end.current?.scrollIntoView({ block: 'end' }); markRead(item.id, Math.max(Date.now(), ...msgs.map((m) => m.at))); } }, [msgs, item.id]);
 
@@ -171,7 +238,7 @@ function Conversation({ item, me, byId, onBack, onClose, onSession }) {
   return (
     <>
       <div className="chat-top">
-        <button className="icon-btn" onClick={onBack} aria-label="Retour"><ArrowLeft size={20} /></button>
+        {!wide && <button className="icon-btn" onClick={onBack} aria-label="Retour"><ArrowLeft size={20} /></button>}
         {item.type === 'dm' ? <Avatar p={item.other} size={30} /> : null}
         <button className="grow chat-title" onClick={() => (s ? setShowMembers(!showMembers) : null)}>
           <b>{item.title}</b>
@@ -211,6 +278,7 @@ function Conversation({ item, me, byId, onBack, onClose, onSession }) {
         })}
         <div ref={end} />
       </div>
+      {item.archived && <p className="chat-archived"><Archive size={14} /> Groupe archivé (séance terminée). Écrire un message le réactive.</p>}
       {lastAnn && (
         <div className="ann-done">
           <span className="grow">Annonce publiée. Préviens aussi sur WhatsApp :</span>

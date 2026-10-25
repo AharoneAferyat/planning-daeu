@@ -337,15 +337,22 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
 }
 
 // ---------- Bandeaux permanents en haut du planning (même ordre de priorité) ----------
-export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls }) {
+export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, unread = 0 }) {
   const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
   const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
-  if (!a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length) return null;
+  if (!a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
   return (
     <div className="al-bar">
       {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
       {a.anns.map((s) => <AnnounceCard key={s.id} s={s} onOpen={onSession} />)}
+      {unread > 0 && (
+        <button className="al-card al-c-chat" onClick={() => openChat('')}>
+          <MessageCircle size={20} className="al-ico" />
+          <span className="grow"><b>{unread} conversation{unread > 1 ? 's' : ''} non lue{unread > 1 ? 's' : ''}</b></span>
+          <span className="al-go">Lire <ChevronRight size={16} /></span>
+        </button>
+      )}
       {a.cancelled.map((s) => <CancelCard key={s.id} s={s} me={me} onOpen={onSession} />)}
       {a.cancelledPolls.map((p) => <PollCancelCard key={p.id} p={p} onOpen={() => onGoPolls(p.id)} />)}
       {a.freed.length > 0 && (

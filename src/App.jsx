@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { isConfigured } from './firebase';
 import { checkInvite, log, useConvs, usePolls, useParticipants, useSessions, useSettings } from './data';
-import ChatPanel, { ChatButton, useChatList } from './components/Chat';
+import ChatPanel, { ChatButton, ChatFab, useChatList } from './components/Chat';
 import { autoCleanup } from './cleanup';
 import { addDays, isoDate, ls, ss, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
 import useTheme from './useTheme';
@@ -221,7 +221,7 @@ function PublicApp() {
         <div className="top-actions">
           <button className="btn small primary hide-xs" onClick={() => setEditing(true)}><Pencil size={15} /> Mes dispos</button>
           <button className="icon-btn show-xs edit-top" onClick={() => setEditing(true)} aria-label="Modifier mes dispos" title="Mes dispos"><Pencil size={20} /></button>
-          <ChatButton list={chatList} onClick={() => setChat('')} />
+          <span className="hide-xs"><ChatButton list={chatList} onClick={() => setChat('')} /></span>
           <button className="icon-btn hide-xs" onClick={share} title="Partager le lien"><Share2 size={20} /></button>
           <ThemeButton mode={theme} cycle={cycleTheme} />
           <div className="me-menu">
@@ -279,7 +279,7 @@ function PublicApp() {
           <span><b>{viewPolls.filter(isOpenPoll).length}</b> sondage(s) en cours</span>
         </div>
 
-        <AlertsBar sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
+        <AlertsBar unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
 
         {view !== 'seances' && (
           <Filters filters={filters} setFilters={setFilters} people={filtered} highlight={highlight} setHighlight={setHighlight} />
@@ -301,6 +301,7 @@ function PublicApp() {
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
       {cell && <CellSheet cell={cell} people={filtered} settings={settings} meId={me.id} onClose={() => setCell(null)}
         onPlan={(x) => { setCell(null); planFromSlot(x); }} />}
+      {chat === null && <ChatFab list={chatList} onClick={() => setChat('')} />}
       {chat !== null && me && <ChatPanel initialConv={chat} list={chatList} people={people} me={me} onClose={() => setChat(null)} onSession={(s) => { setChat(null); setView('seances'); setSessionOpen(s); }} />}
       {sessionOpen && (() => {
         const live = sessions.find((s) => s.id === sessionOpen.id);

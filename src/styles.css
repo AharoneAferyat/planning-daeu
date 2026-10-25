@@ -1036,3 +1036,8 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .chat-arch-head .grow-end { margin-left: auto; }
 .chat-arch .chat-item { opacity: .8; }
 .chat-archived { display: flex; align-items: center; gap: 6px; justify-content: center; margin: 0; padding: 7px 12px; font-size: 12.5px; color: var(--muted); background: var(--surface-2); border-top: 1px solid var(--border); }
+/* PC : bouton « Messages » dans l'en-tête + bouton flottant */
+.btn.chat-btn { position: relative; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); font-weight: 700; }
+.btn.chat-btn.has-unread { background: #DC2626; border-color: #DC2626; color: #fff; animation: fab-pulse 2s ease-in-out infinite; }
+.btn.chat-btn .chat-badge { position: static; margin-left: 2px; background: #fff; color: #DC2626; border: none; }
+@media (min-width: 761px) { .chat-fab { display: none !important; } }

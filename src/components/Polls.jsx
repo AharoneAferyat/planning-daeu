@@ -524,6 +524,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
   const canManage = isAdmin || (me && s.createdBy === me.id);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [leaveAsk, setLeaveAsk] = useState(false); // l'organisateur se retire : annuler ou maintenir ?
   const MSG = {
     in: st.hybrid ? 'C’est noté : tu viens en présentiel, ta place est réservée !' : 'C’est noté, ta place est réservée !',
     visio: 'C’est noté : tu suis la séance en visio.',
@@ -555,7 +556,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <button className="btn ghost" onClick={ics} title="Ajouter à mon agenda"><CalendarPlus size={16} /></button>
         <WaButton onClick={() => shareWhatsApp(sessionMessage(s))} />
         <span className="grow" />
-        {!st.cancelled && isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => act(false)}>Je ne suis plus dispo</button>}
+        {!st.cancelled && isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => { if (s.createdBy !== me.id) return act(false); setLeaveAsk(true); setTimeout(() => document.querySelector('.leave-ask')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); }}>Je ne suis plus dispo</button>}
         {!st.cancelled && isPerson && !st.hybrid && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}
         {!st.cancelled && isPerson && st.status === 'wait' && <button className="btn ghost" disabled={busy} onClick={() => act(false)}>Quitter l'attente</button>}
         {!st.cancelled && isPerson && !st.hybrid && st.status === 'out' && !iMaybe && <button className="btn primary" disabled={busy} onClick={() => act(true)}>{st.full ? 'Liste d’attente' : <><Check size={16} /> J'y vais</>}</button>}
@@ -652,6 +653,19 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
               </button>
             ))}
             <button className="btn" disabled={busy} onClick={async () => { setBusy(true); await answerMaybe(s, me, false); setMsg('C’est noté, tu ne viens pas.'); setBusy(false); }}>Je ne viens pas</button>
+          </div>
+        </div>
+      )}
+      {leaveAsk && (
+        <div className="decision leave-ask">
+          <p><b>Tu organises cette séance et tu ne peux plus venir.</b> Que fait-on ?</p>
+          <p className="muted tiny">{att.length - 1 > 0 ? `${att.length - 1} autre${att.length - 1 > 1 ? 's' : ''} inscrit${att.length - 1 > 1 ? 's' : ''}.` : 'Personne d’autre n’est inscrit.'} Si tu annules, les inscrits sont prévenus à l’ouverture du site.</p>
+          <div className="row-btns">
+            <ConfirmButton className="btn danger" confirmText="Confirmer l'annulation" onConfirm={async () => { setBusy(true); await joinSession(s, me, false); await cancelSession(s, actor); setLeaveAsk(false); setMsg('Séance annulée, les inscrits sont prévenus.'); setBusy(false); }}>
+              <CalendarX2 size={15} /> Annuler la séance
+            </ConfirmButton>
+            <button className="btn primary" disabled={busy} onClick={async () => { await act(false); setLeaveAsk(false); setMsg('Tu n’es plus inscrit(e). La séance est maintenue sans toi, et tu peux toujours la gérer.'); }}>Maintenir sans moi</button>
+            <button className="btn ghost" onClick={() => setLeaveAsk(false)}>Retour</button>
           </div>
         </div>
       )}

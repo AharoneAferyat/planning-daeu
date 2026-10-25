@@ -61,8 +61,8 @@ export function useChatList(convs, sessions, people, me) {
 export function ChatButton({ list, onClick }) {
   const n = list.filter((x) => x.unread).length;
   return (
-    <button className="icon-btn chat-btn" onClick={onClick} aria-label="Messages" title="Messages">
-      <MessageCircle size={20} />{n > 0 && <span className="chat-badge">{n}</span>}
+    <button className={'btn small chat-btn' + (n ? ' has-unread' : '')} onClick={onClick} title="Messages">
+      <MessageCircle size={16} /> Messages{n > 0 && <span className="chat-badge">{n}</span>}
     </button>
   );
 }

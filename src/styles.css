@@ -1041,3 +1041,16 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .btn.chat-btn.has-unread { background: #DC2626; border-color: #DC2626; color: #fff; animation: fab-pulse 2s ease-in-out infinite; }
 .btn.chat-btn .chat-badge { position: static; margin-left: 2px; background: #fff; color: #DC2626; border: none; }
 @media (min-width: 761px) { .chat-fab { display: none !important; } }
+/* Réactions aux messages */
+.bubble { cursor: pointer; user-select: text; }
+.bubble.picked { outline: 2px solid rgba(var(--accent-rgb), .5); outline-offset: 1px; }
+.react-bar { display: flex; gap: 2px; width: fit-content; margin: 2px 0 4px 32px; padding: 4px 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,.12); animation: pop .15s ease; }
+.react-bar.mine { margin-left: auto; margin-right: 30px; }
+.react-bar button { font-size: 22px; line-height: 1; width: 38px; height: 38px; border-radius: 50%; border: none; background: none; cursor: pointer; }
+.react-bar button.on { background: rgba(var(--accent-rgb), .15); }
+.reacts { display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 4px 32px; }
+.reacts.mine { justify-content: flex-end; margin: -2px 30px 4px 0; }
+.react-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; cursor: pointer; color: var(--text); max-width: 100%; }
+.react-chip.on { border-color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.react-chip b { font-size: 12px; }
+.react-who { font-size: 11.5px; color: var(--muted); max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ArrowLeft, ChevronDown, Megaphone, MessageCircle, Plus, Search, Send, Trash2, Users, X } from 'lucide-react';
-import { dmConvId, deleteMessage, postAnnounce, sendMessage, sessionConvId, useMessages } from '../data';
+import { dmConvId, deleteMessage, postAnnounce, REACTIONS, sendMessage, sessionConvId, toggleReact, useMessages } from '../data';
 import { fmt, fmtDay, isoDate, isPast, ls, normName, parseIso, timeAgo } from '../utils';
 import { announceMessage, shareWhatsApp } from '../share';
 import { hiddenId } from '../testmode';
@@ -216,6 +216,7 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
   const [announce, setAnnounce] = useState(false);
   const [lastAnn, setLastAnn] = useState(null);
   const [showMembers, setShowMembers] = useState(false);
+  const [reactFor, setReactFor] = useState(null); // message dont la barre de réactions est ouverte
   const [busy, setBusy] = useState(false);
   const end = useRef(null);
   const s = item.s;
@@ -260,12 +261,14 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
           const sep = day !== lastDay ? (lastDay = day) : null;
           const mine = m.by === me.id;
           const p = byId[m.by];
+          const reacts = Object.entries(m.reacts || {}).filter(([, ids]) => ids?.length);
+          const name = (id) => (id === me.id ? 'toi' : byId[id]?.prenom || '?');
           return (
             <div key={m.id}>
               {sep && <div className="chat-day">{fmtDay(day, { weekday: 'long', day: 'numeric', month: 'long' })}</div>}
               <div className={'msg' + (mine ? ' mine' : '') + (m.kind === 'announce' ? ' ann' : '')}>
                 {!mine && (p ? <Avatar p={p} size={26} /> : <span className="pcom-av">?</span>)}
-                <div className="bubble">
+                <div className={'bubble' + (reactFor === m.id ? ' picked' : '')} onClick={() => setReactFor(reactFor === m.id ? null : m.id)} role="button" tabIndex={0} title="Toucher pour réagir">
                   {m.kind === 'announce' && <span className="ann-tag"><Megaphone size={13} /> Annonce</span>}
                   {!mine && item.type === 'session' && <span className="msg-who">{m.byName}</span>}
                   <span className="msg-text">{m.text}</span>
@@ -273,6 +276,24 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
                 </div>
                 {mine && <button className="icon-btn msg-del" onClick={() => deleteMessage(m)} aria-label="Supprimer"><Trash2 size={13} /></button>}
               </div>
+              {reactFor === m.id && isMember && (
+                <div className={'react-bar' + (mine ? ' mine' : '')}>
+                  {Object.entries(REACTIONS).map(([k, e]) => (
+                    <button key={k} className={(m.reacts?.[k] || []).includes(me.id) ? 'on' : ''} onClick={() => { toggleReact(m, me, k); setReactFor(null); }} aria-label={`Réagir ${e}`}>{e}</button>
+                  ))}
+                </div>
+              )}
+              {reacts.length > 0 && (
+                <div className={'reacts' + (mine ? ' mine' : '')}>
+                  {reacts.map(([k, ids]) => (
+                    <button key={k} className={'react-chip' + (ids.includes(me.id) ? ' on' : '')} disabled={!isMember}
+                      onClick={() => toggleReact(m, me, k)} title={ids.map(name).join(', ')}>
+                      {REACTIONS[k]} <b>{ids.length}</b>
+                      <span className="react-who">{ids.map(name).join(', ')}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

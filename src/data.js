@@ -463,3 +463,9 @@ export async function deleteConv(conv) {
   for (const d of snap.docs) if (d.data().conv === conv) await deleteDoc(d.ref);
   try { await deleteDoc(doc(db, 'convs', conv)); } catch { /* */ }
 }
+// Réactions aux messages : reacts.<clé> = [ids]
+export const REACTIONS = { like: '👍', love: '❤️', haha: '😂', wow: '😮', sad: '😢', ok: '✅' };
+export async function toggleReact(m, me, key) {
+  const on = !(m.reacts?.[key] || []).includes(me.id);
+  await updateDoc(doc(db, 'messages', m.id), { [`reacts.${key}`]: on ? arrayUnion(me.id) : arrayRemove(me.id) });
+}

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs,
-  increment, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, writeBatch,
+  increment, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { DEFAULT_SETTINGS } from './config';
 import { fmt, fmtDayShort, shortUA, toDate, normalizeSlots } from './utils';
-import { splitPlaces, yesOrder } from './places';
+import { splitPlaces, yesByMode, yesOrder } from './places';
 import { inTestMode, TEST_ID } from './testmode';
 
 // ---------- Historique ----------
@@ -215,6 +215,10 @@ export async function updatePoll(id, data, actor, title) {
   await updateDoc(doc(db, 'polls', id), { ...data, updatedAt: serverTimestamp() });
   await log('poll_update', actor, title, {});
 }
+// Mode choisi pour une date d'un sondage hybride
+export async function setPollMode(poll, me, optId, mode) {
+  await updateDoc(doc(db, 'polls', poll.id), { [`modes.${me.id}.${optId}`]: mode === 'visio' ? 'visio' : deleteField() });
+}
 export async function votePoll(poll, me, choices) {
   // Les « oui » sont rangés par ordre d'arrivée (premier arrivé, premier servi)
   const upd = { [`votes.${me.id}`]: choices };
@@ -231,12 +235,18 @@ export async function votePoll(poll, me, choices) {
 export async function closePoll(poll, option, extra, actor) {
   const max = Number(poll.max) || null; // fixé par le sondage
   const min = Number(poll.min) || null;
-  const { inn: attendees, wait: waitlist } = splitPlaces(yesOrder(poll, option.id), max);
+  // Hybride : seuls les « Oui » en présentiel prennent les places ; les « Oui » en visio sont tous inscrits
+  const format = extra.format || poll.format || 'hybride';
+  const byMode = format === 'hybride' ? yesByMode(poll, option.id) : { pres: yesOrder(poll, option.id), visio: [] };
+  const split = splitPlaces(byMode.pres, max);
+  const attendees = [...split.inn, ...byMode.visio];
+  const waitlist = split.wait;
+  const modes = Object.fromEntries(byMode.visio.map((id) => [id, 'visio']));
   // Les « Peut-être » restent rattachés à la séance : ils doivent confirmer (et ne voient les infos qu'après)
   const maybes = Object.keys(poll.votes || {}).filter((id) => poll.votes[id]?.[option.id] === 'maybe');
   const sRef = await addDoc(collection(db, 'sessions'), {
     title: poll.title, date: option.date, s: option.s, e: option.e,
-    format: extra.format || poll.format || 'hybride', place: extra.place ?? poll.place ?? '', note: poll.description || '',
+    format, modes, place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
     ...(extra.infoData || {}),
     attendees, waitlist, maybes, max, min, audience: poll.audience || [], subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
@@ -292,38 +302,62 @@ export async function updateSession(id, data, actor, title) {
 }
 // Inscription / désinscription avec places limitées.
 // Renvoie 'in' (place obtenue), 'wait' (liste d'attente), 'freed' (place libérée) ou 'out'.
-export async function joinSession(s, me, join) {
+// Inscription / désinscription / changement de mode.
+// opts.mode : 'presentiel' | 'visio' (séances hybrides). opts.keepWait : rester dans la file du présentiel en suivant en visio.
+// Renvoie 'in' | 'visio' | 'visio_wait' | 'wait' | 'freed' | 'out' | 'cancelled'
+export async function joinSession(s, me, join, opts = {}) {
   const ref = doc(db, 'sessions', s.id);
   const status = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     const d = snap.data() || {};
     let att = d.attendees || [];
     let wait = d.waitlist || [];
+    const modes = { ...(d.modes || {}) };
     const max = Number(d.max) || 0;
+    const hybrid = (d.format || 'hybride') === 'hybride';
     if (d.cancelled && join) return 'cancelled';
+    const counts = (id) => !hybrid || modes[id] !== 'visio';
+    const presCount = () => att.filter((id) => id !== me.id && counts(id)).length;
+    const wasCounted = att.includes(me.id) && counts(me.id);
     let st;
     if (join) {
-      if (att.includes(me.id)) return 'in';
-      if (!max || att.length < max) { att = [...att, me.id]; wait = wait.filter((x) => x !== me.id); st = 'in'; }
-      else { if (!wait.includes(me.id)) wait = [...wait, me.id]; st = 'wait'; }
+      const mode = hybrid ? (opts.mode || 'presentiel') : 'presentiel';
+      if (mode === 'visio') {
+        if (!att.includes(me.id)) att = [...att, me.id];
+        modes[me.id] = 'visio';
+        if (!opts.keepWait) wait = wait.filter((x) => x !== me.id);
+        st = wait.includes(me.id) ? 'visio_wait' : 'visio';
+        if (wasCounted && max && wait.filter((x) => x !== me.id).length) st = st === 'visio' ? 'freed' : st;
+      } else if (!max || presCount() < max) {
+        if (!att.includes(me.id)) att = [...att, me.id];
+        delete modes[me.id];
+        wait = wait.filter((x) => x !== me.id);
+        st = 'in';
+      } else {
+        if (!wait.includes(me.id)) wait = [...wait, me.id];
+        st = att.includes(me.id) ? 'visio_wait' : 'wait';
+      }
     } else {
-      const wasIn = att.includes(me.id);
       att = att.filter((x) => x !== me.id);
       wait = wait.filter((x) => x !== me.id);
-      st = wasIn && max && wait.length ? 'freed' : 'out';
+      delete modes[me.id];
+      st = wasCounted && max && wait.length ? 'freed' : 'out';
     }
-    tx.update(ref, { attendees: att, waitlist: wait });
+    tx.update(ref, { attendees: att, waitlist: wait, modes });
     return st;
   });
   if (status === 'cancelled') return status;
   const who = `${me.prenom} ${me.nom || ''}`.trim();
   const date = `${fmtDayShort(s.date)} ${fmt(s.s)}`;
-  if (status === 'in') await log('session_join', who, s.title, { date });
+  if (status === 'in') await log('session_join', who, s.title, { date, mode: 'présentiel' });
+  else if (status === 'visio' || (join && status === 'freed')) await log('session_join', who, s.title, { date, mode: 'visio' });
+  else if (status === 'visio_wait') await log('session_wait', who, s.title, { date, mode: 'visio en attendant une place' });
   else if (status === 'wait') await log('session_wait', who, s.title, { date });
   else await log('session_leave', who, s.title, status === 'freed' ? { date, info: 'place libérée, liste d’attente prévenue' } : { date });
   return status;
 }
-// Infos pratiques réservées aux inscrits (lieu, lien visio, consignes)
+
+// Infos pratiques (lieu, distanciel, consignes) : visibles des inscrits uniquement
 export async function saveSessionInfo(s, info, actor) {
   const clean = { place: (info.place || '').trim(), visio: (info.visio || '').trim(), note: (info.note || '').trim() };
   await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp() });
@@ -331,9 +365,9 @@ export async function saveSessionInfo(s, info, actor) {
 }
 
 // Réponse d'un « Peut-être » : il vient (inscription ou liste d'attente) ou il ne vient pas
-export async function answerMaybe(s, me, yes) {
+export async function answerMaybe(s, me, yes, mode) {
   let r = 'no';
-  if (yes) r = await joinSession(s, me, true);
+  if (yes) r = await joinSession(s, me, true, { mode });
   if (r === 'cancelled') return r;
   await updateDoc(doc(db, 'sessions', s.id), { maybeAnswered: arrayUnion(me.id) });
   if (!yes) await log('session_maybe_no', `${me.prenom} ${me.nom || ''}`.trim(), s.title, { date: `${fmtDayShort(s.date)} ${fmt(s.s)}` });
@@ -376,4 +410,56 @@ export async function wipeCollection(name) {
 export async function fetchAll(name) {
   const snap = await getDocs(collection(db, name));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// ---------- Messagerie ----------
+// convs/{id} : résumé de chaque conversation (dernier message) ; messages : un document par message.
+// Conversation de séance : « s_<id séance> » (membres = inscrits + créateur, calculés en direct)
+// Conversation privée : « dm_<idA>_<idB> » (ids triés)
+export const sessionConvId = (sid) => `s_${sid}`;
+export const dmConvId = (a, b) => `dm_${[a, b].sort().join('_')}`;
+const fullName = (me) => `${me.prenom} ${me.nom || ''}`.trim();
+
+export function useConvs() {
+  const [rows, setRows] = useState(null);
+  useEffect(() => onSnapshot(collection(db, 'convs'), (snap) => setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => setRows([])), []);
+  return rows;
+}
+export function useMessages(conv) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    if (!conv) return undefined;
+    setRows(null);
+    return onSnapshot(query(collection(db, 'messages'), where('conv', '==', conv)),
+      (snap) => setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((m) => m.conv === conv).sort((a, b) => a.at - b.at)),
+      () => setRows([]));
+  }, [conv]);
+  return rows;
+}
+export async function sendMessage(conv, me, text, meta = {}) {
+  const t = text.trim().slice(0, 1000);
+  if (!t) return;
+  const at = Date.now();
+  await addDoc(collection(db, 'messages'), { conv, by: me.id, byName: fullName(me), text: t, at, ...(meta.kind ? { kind: meta.kind } : {}) });
+  await setDoc(doc(db, 'convs', conv), {
+    lastAt: at, lastText: t.slice(0, 120), lastBy: me.id, lastByName: fullName(me),
+    ...(meta.type ? { type: meta.type } : {}), ...(meta.members ? { members: meta.members } : {}), ...(meta.sessionId ? { sessionId: meta.sessionId } : {}),
+  }, { merge: true });
+}
+export async function deleteMessage(m) {
+  await deleteDoc(doc(db, 'messages', m.id));
+}
+// Annonce du créateur de séance : message mis en avant dans le groupe + rappel à l'ouverture du site
+export async function postAnnounce(s, me, text) {
+  const t = text.trim().slice(0, 600);
+  if (!t) return;
+  await sendMessage(sessionConvId(s.id), me, t, { kind: 'announce', type: 'session', sessionId: s.id });
+  await updateDoc(doc(db, 'sessions', s.id), { announce: { text: t, at: Date.now(), by: me.id, byName: fullName(me) } });
+  await log('session_announce', fullName(me), s.title, { annonce: t });
+}
+// Suppression d'une conversation entière (ménage des vieilles séances)
+export async function deleteConv(conv) {
+  const snap = await getDocs(query(collection(db, 'messages'), where('conv', '==', conv)));
+  for (const d of snap.docs) if (d.data().conv === conv) await deleteDoc(d.ref);
+  try { await deleteDoc(doc(db, 'convs', conv)); } catch { /* */ }
 }

@@ -61,6 +61,7 @@ export const LOG_TYPES = {
   poll_reopen: 'Sondage rouvert',
   poll_cancel: 'Sondage annulé',
   poll_comment: 'Commentaire',
+  session_announce: 'Annonce de séance',
   session_maybe_no: 'Peut-être → ne vient pas',
   cleanup: 'Ménage (suppression auto)',
   poll_comment_delete: 'Commentaire supprimé',

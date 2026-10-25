@@ -2,7 +2,7 @@
 // Pas de serveur : le ménage est lancé par les visiteurs, au plus une fois par jour et par appareil.
 import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
-import { log } from './data';
+import { deleteConv, log, sessionConvId } from './data';
 import { isoDate, ls } from './utils';
 
 export const CLEANUP_DEFAULT_MONTHS = 3;
@@ -28,7 +28,7 @@ export function oldItems(polls, sessions, months) {
 export async function runCleanup(polls, sessions, months, actor) {
   const old = oldItems(polls, sessions, months);
   if (!old.sessions.length && !old.polls.length) return old;
-  for (const s of old.sessions) await deleteDoc(doc(db, 'sessions', s.id));
+  for (const s of old.sessions) { await deleteDoc(doc(db, 'sessions', s.id)); try { await deleteConv(sessionConvId(s.id)); } catch { /* */ } }
   for (const p of old.polls) await deleteDoc(doc(db, 'polls', p.id));
   await log('cleanup', actor, `${old.sessions.length} séance(s), ${old.polls.length} sondage(s)`, {
     'plus vieux que': `${months} mois`,

@@ -39,7 +39,7 @@ export default function AdminSettings({ settings, people, polls, sessions }) {
 
   const exportJson = async () => {
     const all = {};
-    for (const c of ['participants', 'invites', 'polls', 'sessions', 'logs']) all[c] = await fetchAll(c);
+    for (const c of ['participants', 'invites', 'polls', 'sessions', 'logs', 'convs', 'messages']) all[c] = await fetchAll(c);
     download(`sauvegarde-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(all, null, 2), 'application/json');
   };
 

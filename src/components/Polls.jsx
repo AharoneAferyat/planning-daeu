@@ -5,16 +5,17 @@ import {
 import { arrayUnion } from 'firebase/firestore';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
-  answerMaybe, cancelPoll, cancelSession, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
+  answerMaybe, cancelPoll, cancelSession, setPollMode, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
-import { isMaybe, isOpenPoll, maybesOf, placesLabel, sessionState, splitPlaces, yesOrder } from '../places';
+import { isHybrid, isMaybe, isOpenPoll, maybesOf, placesLabel, pollModeOf, sessionState, splitPlaces, yesByMode, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
 import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfoSeen } from './SessionInfo';
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
+import { SessionChatBlock } from './Chat';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personCoursesAt, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
 const actorName = (me) => (me ? `${me.prenom} ${me.nom || ''}`.trim() : 'Admin');
@@ -137,12 +138,16 @@ function optionGroups(poll, o, allPeople, settings) {
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const by = (k) => people.filter((p) => v[p.id]?.[o.id] === k);
   const yes = yesOrder(poll, o.id).map((id) => byId[id]).filter(Boolean);
-  const { inn, wait } = splitPlaces(yes, Number(poll.max) || 0);
+  // Hybride : les places ne concernent que le présentiel
+  const bm = isHybrid(poll) ? yesByMode(poll, o.id) : { pres: yesOrder(poll, o.id), visio: [] };
+  const yesPres = bm.pres.map((id) => byId[id]).filter(Boolean);
+  const yesVisio = bm.visio.map((id) => byId[id]).filter(Boolean);
+  const { inn, wait } = splitPlaces(yesPres, Number(poll.max) || 0);
   const answered = new Set([...yes, ...by('maybe'), ...by('no')].map((p) => p.id));
   const fc = forecast(allPeople, o.date, o.s, o.e, { settings, item: poll });
   const noAnswer = people.filter((p) => !answered.has(p.id));
   return {
-    yes, yesIn: inn, yesWait: wait, maybe: by('maybe'), no: by('no'), fc,
+    yes, yesPres, yesVisio, yesIn: inn, yesWait: wait, maybe: by('maybe'), no: by('no'), fc,
     pendingDispo: noAnswer.filter((p) => fc.full.includes(p)),
     pendingOther: noAnswer.filter((p) => !fc.full.includes(p)),
   };
@@ -171,6 +176,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
   const iVoted = me && poll.votes?.[me.id];
   const max = Number(poll.max) || 0;
   const min = Number(poll.min) || 0;
+  const hybrid = isHybrid(poll);
 
   // Vote enregistré automatiquement à chaque clic
   const vote = async (optId, k) => {
@@ -244,14 +250,15 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
                   <span className="vc maybe">{sc.maybe} peut-être</span>
                   <span className="vc no">{sc.no} non</span>
                   {min > 0 && <span className={'vc ' + (g.yes.length >= min ? 'minok' : 'minko')}>{g.yes.length >= min ? `min ${min} ✓` : `il manque ${min - g.yes.length} (min ${min})`}</span>}
-                  {max > 0 && <span className={'vc places' + (g.yes.length >= max ? ' full' : '')}>{Math.min(g.yes.length, max)}/{max} places{g.yesWait.length ? ` · ${g.yesWait.length} en attente` : ''}</span>}
+                  {max > 0 && <span className={'vc places' + (g.yesPres.length >= max ? ' full' : '')}>{Math.min(g.yesPres.length, max)}/{max} places{hybrid ? ' en présentiel' : ''}{g.yesWait.length ? ` · ${g.yesWait.length} en attente` : ''}</span>}
+                  {hybrid && g.yes.length > 0 && <span className="vc mode">🏫 {g.yesPres.length} · 💻 {g.yesVisio.length}</span>}
                   <span className="fc"><Clock size={12} /> {g.fc.full.length} dispo (planning)</span>
                   {(() => { const n = (poll.comments || []).filter((c) => c.optId === o.id).length; return n > 0 && <span className="vc com">💬 {n} commentaire{n > 1 ? 's' : ''}</span>; })()}
                 </div>
                 {g.yes.length + g.maybe.length > 0 && <AvatarStack people={[...g.yes, ...g.maybe]} max={8} size={24} />}
                 {me && g.yesIn.some((p) => p.id === me.id) && max > 0 && <span className="pill ok my-place"><Check size={12} /> Ta place est réservée</span>}
                 {me && g.yesWait.some((p) => p.id === me.id) && <span className="pill warn my-place">Tu es en liste d'attente (n°{g.yesWait.findIndex((p) => p.id === me.id) + 1})</span>}
-                {canVote && max > 0 && g.yes.length >= max && draft[o.id] !== 'yes' && myVotes[o.id] !== 'yes' && <span className="muted tiny">Complet : un « Oui » te met en liste d'attente.</span>}
+                {canVote && max > 0 && g.yesPres.length >= max && draft[o.id] !== 'yes' && myVotes[o.id] !== 'yes' && <span className="muted tiny">{hybrid ? 'Complet en présentiel : un « Oui » en présentiel te met en liste d’attente (la visio reste possible).' : 'Complet : un « Oui » te met en liste d\'attente.'}</span>}
               </button>
               {canVote && (
                 <div className="vote-btns">
@@ -261,6 +268,20 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
                   ))}
                 </div>
               )}
+              {canVote && hybrid && (draft[o.id] === 'yes' || draft[o.id] === 'maybe') && (() => {
+                const m = pollModeOf(poll, me.id, o.id);
+                const waitPres = m !== 'visio' && g.yesWait.some((p) => p.id === me.id);
+                return (
+                  <div className="mode-pick">
+                    <span className="muted tiny">Tu viendrais :</span>
+                    <div className="seg">
+                      <button className={m !== 'visio' ? 'on' : ''} onClick={() => setPollMode(poll, me, o.id, 'presentiel')}>🏫 Présentiel</button>
+                      <button className={m === 'visio' ? 'on' : ''} onClick={() => setPollMode(poll, me, o.id, 'visio')}>💻 Visio</button>
+                    </div>
+                    {waitPres && <span className="muted tiny">Présentiel complet : tu es en attente. Passe en visio si ça te va, tu pourras redemander le présentiel sur la séance.</span>}
+                  </div>
+                );
+              })()}
               {canVote && (draft[o.id] === 'yes' || draft[o.id] === 'maybe') && (() => {
                 const mine = personCoursesAt(me, settings, o.date, parseIso(o.date).getDay(), o.s, o.e);
                 if (!mine.length) return null;
@@ -309,9 +330,10 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
           subtitle={poll.title}
           groups={[
             ...(max > 0 ? [
-              { label: `Oui — places réservées (${detailData.yesIn.length}/${max})`, color: VOTE.yes.color, people: detailData.yesIn, showEmpty: true, extra: (p) => `n°${detailData.yesIn.indexOf(p) + 1}` },
+              { label: `Oui${hybrid ? ' en présentiel' : ''} — places réservées (${detailData.yesIn.length}/${max})`, color: VOTE.yes.color, people: detailData.yesIn, showEmpty: true, extra: (p) => `n°${detailData.yesIn.indexOf(p) + 1}` },
               { label: 'Oui — liste d’attente', color: '#0EA5E9', people: detailData.yesWait, hint: 'Premier arrivé, premier servi : si quelqu’un se retire, le suivant prend sa place.', extra: (p) => `attente n°${detailData.yesWait.indexOf(p) + 1}` },
-            ] : [{ label: 'Oui', color: VOTE.yes.color, people: detailData.yes, showEmpty: true }]),
+            ] : hybrid ? [{ label: 'Oui en présentiel', color: VOTE.yes.color, people: detailData.yesPres, showEmpty: true }] : [{ label: 'Oui', color: VOTE.yes.color, people: detailData.yes, showEmpty: true }]),
+            ...(hybrid ? [{ label: 'Oui en visio', color: '#0E7490', people: detailData.yesVisio }] : []),
             { label: 'Peut-être', color: VOTE.maybe.color, people: detailData.maybe },
             { label: 'Non', color: VOTE.no.color, people: detailData.no },
             { label: 'Pas répondu — mais dispo d’après le planning', color: '#4F46E5', people: detailData.pendingDispo },
@@ -500,10 +522,16 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
   const canManage = isAdmin || (me && s.createdBy === me.id);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
-  const act = async (join) => {
+  const MSG = {
+    in: st.hybrid ? 'C’est noté : tu viens en présentiel, ta place est réservée !' : 'C’est noté, ta place est réservée !',
+    visio: 'C’est noté : tu suis la séance en visio.',
+    visio_wait: 'Présentiel complet : tu suis en visio en attendant, et tu restes dans la file pour le présentiel.',
+    wait: st.hybrid ? 'Présentiel complet : tu es en liste d’attente (tu peux suivre en visio en attendant).' : 'Séance complète : tu es en liste d’attente.',
+  };
+  const act = async (join, opts) => {
     setBusy(true);
-    const r = await joinSession(s, me, join);
-    setMsg(r === 'in' ? 'C’est noté, ta place est réservée !' : r === 'wait' ? 'Séance complète : tu es en liste d’attente.' : r === 'freed' ? 'Ta place est libérée, la liste d’attente est prévenue.' : canManage ? 'Tu n’es plus inscrit(e). La séance a toujours lieu et tu peux toujours la gérer.' : 'Désinscription enregistrée.');
+    const r = await joinSession(s, me, join, opts);
+    setMsg(MSG[r] || (r === 'freed' ? (join ? 'C’est noté : tu passes en visio, ta place en présentiel est libérée pour la file.' : 'Ta place est libérée, la liste d’attente est prévenue.') : canManage ? 'Tu n’es plus inscrit(e). La séance a toujours lieu et tu peux toujours la gérer.' : 'Désinscription enregistrée.'));
     setBusy(false);
   };
   const isPerson = me && me.id !== 'admin';
@@ -526,9 +554,9 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <WaButton onClick={() => shareWhatsApp(sessionMessage(s))} />
         <span className="grow" />
         {!st.cancelled && isPerson && st.status === 'in' && <button className="btn" disabled={busy} onClick={() => act(false)}>Je ne suis plus dispo</button>}
-        {!st.cancelled && isPerson && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}
+        {!st.cancelled && isPerson && !st.hybrid && st.status === 'wait' && st.free > 0 && <button className="btn primary" disabled={busy} onClick={() => act(true)}><Check size={16} /> Je prends la place</button>}
         {!st.cancelled && isPerson && st.status === 'wait' && <button className="btn ghost" disabled={busy} onClick={() => act(false)}>Quitter l'attente</button>}
-        {!st.cancelled && isPerson && st.status === 'out' && <button className="btn primary" disabled={busy} onClick={() => act(true)}>{st.full ? 'Liste d’attente' : <><Check size={16} /> J'y vais</>}</button>}
+        {!st.cancelled && isPerson && !st.hybrid && st.status === 'out' && !iMaybe && <button className="btn primary" disabled={busy} onClick={() => act(true)}>{st.full ? 'Liste d’attente' : <><Check size={16} /> J'y vais</>}</button>}
       </>}>
       <div className="sess-info">
         <p><CalendarCheck size={16} /> <b>{fmtDay(s.date)}</b> · {fmt(s.s)} – {fmt(s.e)}</p>
@@ -539,6 +567,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
       {!st.cancelled && <SessionInfoBlock s={s} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
+      <SessionChatBlock s={s} me={me} canManage={canManage} concerned={st.status !== 'out' || iMaybe} />
       {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}. Elle reste affichée (barrée) dans le planning pour prévenir les inscrits.</p>}
       {canManage && (
         <div className="manage-row">
@@ -568,12 +597,45 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
       )}
       {st.max > 0 && (
         <div className={'places-box' + (st.full ? ' full' : '')}>
-          <b>{att.length}/{st.max} places</b>
-          <span className="bar-track"><i style={{ width: `${Math.min(100, (att.length / st.max) * 100)}%` }} /></span>
-          <span className="muted tiny">{st.full ? 'Complet' : `${st.free} place${st.free > 1 ? 's' : ''} libre${st.free > 1 ? 's' : ''}`}{waiting.length ? ` · ${waiting.length} en attente` : ''}{st.min ? (st.missing ? ` · il en manque ${st.missing} (min ${st.min})` : ` · min ${st.min} ✓`) : ''}</span>
+          <b>{st.pres.length}/{st.max} places{st.hybrid ? ' en présentiel' : ''}</b>
+          <span className="bar-track"><i style={{ width: `${Math.min(100, (st.pres.length / st.max) * 100)}%` }} /></span>
+          <span className="muted tiny">{st.hybrid && st.visio.length ? `${st.visio.length} en visio · ` : ''}{st.full ? (st.hybrid ? 'Présentiel complet (visio illimitée)' : 'Complet') : `${st.free} place${st.free > 1 ? 's' : ''} libre${st.free > 1 ? 's' : ''}`}{waiting.length ? ` · ${waiting.length} en attente` : ''}{st.min ? (st.missing ? ` · il en manque ${st.missing} (min ${st.min})` : ` · min ${st.min} ✓`) : ''}</span>
         </div>
       )}
-      {isPerson && st.status === 'wait' && (
+      {!st.cancelled && isPerson && st.hybrid && !(iMaybe && st.status === 'out') && (
+        <div className="mode-box">
+          {st.status === 'out' && <>
+            <p><b>Tu viens comment ?</b>{st.full ? ' Le présentiel est complet : la visio reste ouverte.' : ''}</p>
+            <div className="row-btns">
+              <button className="btn primary" disabled={busy} onClick={() => act(true, { mode: 'presentiel' })}>🏫 {st.full ? 'Présentiel (attente)' : 'En présentiel'}</button>
+              <button className="btn" disabled={busy} onClick={() => act(true, { mode: 'visio', keepWait: false })}>💻 En visio</button>
+            </div>
+          </>}
+          {st.status === 'in' && st.mode === 'presentiel' && <>
+            <p>Tu viens en <b>🏫 présentiel</b>.</p>
+            <button className="btn small" disabled={busy} onClick={() => act(true, { mode: 'visio' })}>Passer en 💻 visio</button>
+          </>}
+          {st.status === 'in' && st.mode === 'visio' && !st.waiting && <>
+            <p>Tu suis en <b>💻 visio</b>.</p>
+            <button className="btn small" disabled={busy} onClick={() => act(true, { mode: 'presentiel' })}>{st.full ? 'Demander le présentiel (file d’attente)' : 'Passer en 🏫 présentiel'}</button>
+          </>}
+          {st.status === 'in' && st.mode === 'visio' && st.waiting && <>
+            <p>Tu suis en <b>💻 visio</b> et tu es <b>n°{st.rank}</b> dans la file pour le présentiel.</p>
+            <div className="row-btns">
+              {st.free > 0 && <button className="btn small primary" disabled={busy} onClick={() => act(true, { mode: 'presentiel' })}><Check size={14} /> Une place s’est libérée : je la prends</button>}
+              <button className="btn small ghost" disabled={busy} onClick={() => act(true, { mode: 'visio', keepWait: false })}>Ne plus attendre (rester en visio)</button>
+            </div>
+          </>}
+          {st.status === 'wait' && <>
+            <p>Présentiel complet : tu es <b>n°{st.rank}</b> dans la file.</p>
+            <div className="row-btns">
+              {st.free > 0 && <button className="btn small primary" disabled={busy} onClick={() => act(true, { mode: 'presentiel' })}><Check size={14} /> Une place s’est libérée : je la prends</button>}
+              <button className="btn small" disabled={busy} onClick={() => act(true, { mode: 'visio', keepWait: true })}>💻 Suivre en visio en attendant</button>
+            </div>
+          </>}
+        </div>
+      )}
+      {isPerson && !st.hybrid && st.status === 'wait' && (
         <p className={'alert ' + (st.free > 0 ? 'ok-alert' : 'warn')}>
           {st.free > 0 ? <><b>Une place s'est libérée !</b> Le premier qui la prend est inscrit.</> : <>Tu es <b>n°{st.rank}</b> sur la liste d'attente. Tu seras prévenu(e) si une place se libère.</>}
         </p>
@@ -582,17 +644,25 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <div className="maybe-box">
           <p><b>Tu avais répondu « Peut-être ».</b> Tu confirmes ta venue ?{hasAnyInfo(s) ? ' Les infos pratiques (lieu, lien…) s’affichent une fois inscrit(e).' : ''}</p>
           <div className="row-btns">
-            <button className="btn primary" disabled={busy} onClick={async () => { setBusy(true); const r = await answerMaybe(s, me, true); setMsg(r === 'in' ? 'C’est noté, ta place est réservée !' : r === 'wait' ? 'Séance complète : tu es en liste d’attente.' : ''); setBusy(false); }}>
-              <Check size={16} /> {st.full ? 'Je viens (liste d’attente)' : 'Je viens'}
-            </button>
+            {(st.hybrid ? ['presentiel', 'visio'] : [null]).map((m) => (
+              <button key={m || 'x'} className={'btn ' + (m === 'visio' ? '' : 'primary')} disabled={busy} onClick={async () => { setBusy(true); const r = await answerMaybe(s, me, true, m); setMsg(MSG[r] || ''); setBusy(false); }}>
+                {m === 'visio' ? '💻 Je viens en visio' : m === 'presentiel' ? `🏫 ${st.full ? 'Présentiel (attente)' : 'Je viens en présentiel'}` : <><Check size={16} /> {st.full ? 'Je viens (liste d’attente)' : 'Je viens'}</>}
+              </button>
+            ))}
             <button className="btn" disabled={busy} onClick={async () => { setBusy(true); await answerMaybe(s, me, false); setMsg('C’est noté, tu ne viens pas.'); setBusy(false); }}>Je ne viens pas</button>
           </div>
         </div>
       )}
       {msg && <p className="alert ok-alert">{msg}</p>}
       <PeopleGroups meId={me?.id} groups={[
-        { label: st.max ? 'Places réservées' : 'Participants', color: '#16A34A', people: att, showEmpty: true },
-        { label: 'Liste d’attente', color: '#0EA5E9', people: waiting, extra: (p) => `n°${waiting.indexOf(p) + 1}` },
+        ...(st.hybrid ? [
+          { label: st.max ? `En présentiel (${st.pres.length}/${st.max})` : 'En présentiel', color: '#16A34A', people: att.filter((p) => st.pres.includes(p.id)), showEmpty: true },
+          { label: 'En visio', color: '#0E7490', people: att.filter((p) => st.visio.includes(p.id)), extra: (p) => (st.wait.includes(p.id) ? `attente présentiel n°${st.wait.indexOf(p.id) + 1}` : '') },
+          { label: 'Liste d’attente (présentiel)', color: '#0EA5E9', people: waiting.filter((p) => !st.att.includes(p.id)), extra: (p) => `n°${st.wait.indexOf(p.id) + 1}` },
+        ] : [
+          { label: st.max ? 'Places réservées' : 'Participants', color: '#16A34A', people: att, showEmpty: true },
+          { label: 'Liste d’attente', color: '#0EA5E9', people: waiting, extra: (p) => `n°${waiting.indexOf(p) + 1}` },
+        ]),
         { label: 'Peut-être — pas encore confirmé', color: VOTE.maybe.color, people: maybes },
       ]} />
     </Modal>

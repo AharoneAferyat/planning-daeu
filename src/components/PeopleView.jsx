@@ -1,4 +1,6 @@
-import { Users } from 'lucide-react';
+import { MessageCircle, Users } from 'lucide-react';
+import { openChat } from './Chat';
+import { dmConvId } from '../data';
 import { DAYS_SHORT } from '../constants';
 import { daysCount, fmtDur, slotsOf, timeAgo, totalMinutes } from '../utils';
 import { Avatar, Empty, Name, PersonBadges } from './ui';
@@ -15,6 +17,9 @@ export default function PeopleView({ people, meId, highlight, setHighlight }) {
             <Avatar p={p} size={42} />
             <div>
               <Name p={p} meId={meId} full />
+              {meId && meId !== 'admin' && p.id !== meId && (
+                <button className="btn small ghost pc-msg" onClick={(e) => { e.stopPropagation(); openChat(dmConvId(meId, p.id)); }}><MessageCircle size={14} /> Écrire</button>
+              )}
               <div className="muted tiny">{daysCount(p)} jour{daysCount(p) > 1 ? 's' : ''} · {fmtDur(totalMinutes(p))} dispo / sem · maj {timeAgo(p.updatedAt)}</div>
             </div>
           </div>

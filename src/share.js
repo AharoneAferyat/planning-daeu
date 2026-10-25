@@ -54,3 +54,12 @@ export function sessionMessage(s) {
 export function shareWhatsApp(text) {
   window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
 }
+
+export function announceMessage(s, text) {
+  return clean([
+    `📣 *Annonce : ${s.title}* (${day(s.date)} · ${fmt(s.s)}-${fmt(s.e)})`,
+    text,
+    '',
+    `👉 ${deepLink('session', s.id)}`,
+  ].join('\n'));
+}

@@ -3,7 +3,8 @@ import {
   CalendarDays, CalendarHeart, CalendarRange, KeyRound, LogOut, Pencil, Share2, ShieldCheck, Sparkles, Users, Vote,
 } from 'lucide-react';
 import { isConfigured } from './firebase';
-import { checkInvite, log, usePolls, useParticipants, useSessions, useSettings } from './data';
+import { checkInvite, log, useConvs, usePolls, useParticipants, useSessions, useSettings } from './data';
+import ChatPanel, { ChatButton, useChatList } from './components/Chat';
 import { autoCleanup } from './cleanup';
 import { addDays, isoDate, ls, ss, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
 import useTheme from './useTheme';
@@ -139,6 +140,11 @@ function PublicApp() {
     }
   }, [me, goto, polls, sessions, promptDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Messagerie
+  const convs = useConvs();
+  const chatList = useChatList(convs, sessions, people, me);
+  const [chat, setChat] = useState(null); // null = fermé, '' = liste, sinon id de conversation
+  useEffect(() => { const f = (e) => { setSessionOpen(null); setChat(e.detail?.conv || ''); }; window.addEventListener('ge-chat', f); return () => window.removeEventListener('ge-chat', f); }, []);
   const pendingVotes = useMemo(() => (me ? seePolls.filter((p) => isOpenPoll(p) && !p.votes?.[me.id]).length : 0), [seePolls, me]);
 
   if (peopleErr) return <div className="center-screen"><p className="err">Erreur de connexion à la base : {peopleErr}</p></div>;
@@ -215,7 +221,8 @@ function PublicApp() {
         <div className="top-actions">
           <button className="btn small primary hide-xs" onClick={() => setEditing(true)}><Pencil size={15} /> Mes dispos</button>
           <button className="icon-btn show-xs edit-top" onClick={() => setEditing(true)} aria-label="Modifier mes dispos" title="Mes dispos"><Pencil size={20} /></button>
-          <button className="icon-btn" onClick={share} title="Partager le lien"><Share2 size={20} /></button>
+          <ChatButton list={chatList} onClick={() => setChat('')} />
+          <button className="icon-btn hide-xs" onClick={share} title="Partager le lien"><Share2 size={20} /></button>
           <ThemeButton mode={theme} cycle={cycleTheme} />
           <div className="me-menu">
             <button className="me-btn" onClick={() => setMenu(!menu)} aria-label="Mon compte"><Avatar p={me} size={34} ring /></button>
@@ -226,6 +233,7 @@ function PublicApp() {
                 </div>
                 <button onClick={() => { setEditing(true); setMenu(false); }}><Pencil size={16} /> Modifier mes dispos</button>
                 <button onClick={() => { setPollForm({}); setMenu(false); }}><Vote size={16} /> Créer un sondage</button>
+                <button onClick={() => { share(); setMenu(false); }}><Share2 size={16} /> Partager le lien du site</button>
                 <a className="dd-link" href="/admin"><ShieldCheck size={16} /> Espace admin</a>
                 <button className="dd-danger" onClick={logout}><LogOut size={16} /> Se déconnecter</button>
               </div>
@@ -293,6 +301,7 @@ function PublicApp() {
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
       {cell && <CellSheet cell={cell} people={filtered} settings={settings} meId={me.id} onClose={() => setCell(null)}
         onPlan={(x) => { setCell(null); planFromSlot(x); }} />}
+      {chat !== null && me && <ChatPanel initialConv={chat} list={chatList} people={people} me={me} onClose={() => setChat(null)} onSession={(s) => { setChat(null); setView('seances'); setSessionOpen(s); }} />}
       {sessionOpen && (() => {
         const live = sessions.find((s) => s.id === sessionOpen.id);
         if (!live) return null;
@@ -305,7 +314,7 @@ function PublicApp() {
         onClose={() => setSessionForm(null)} />}
       {needsFormationPrompt(me) && !promptDone ? (
         <FormationPrompt me={me} onDone={(f) => { setPromptDone(true); if (f) { setCat(f); setToast(`C'est noté : ${FORMATIONS[f].label}`); } }} />
-      ) : <AlertsPopup skip={deepLinked} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
+      ) : <AlertsPopup skip={deepLinked} unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
       <Toast text={toast} onDone={clearToast} />
     </div>
   );

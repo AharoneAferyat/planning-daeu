@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArrowLeft, ChevronDown, Megaphone, MessageCircle, Plus, Search, Send, Trash2, Users, X } from 'lucide-react';
-import { dmConvId, deleteMessage, postAnnounce, REACTIONS, sendMessage, sessionConvId, toggleReact, useMessages } from '../data';
+import { Archive, ArrowLeft, Check, ChevronDown, Copy, Eye, MailOpen, Megaphone, MessageCircle, Pencil, Pin, PinOff, Plus, Reply, Search, Send, Trash2, Users, X } from 'lucide-react';
+import { dmConvId, deleteMessage, editMessage, markSeen, markUnread, togglePin, postAnnounce, REACTIONS, sendMessage, sessionConvId, toggleReact, useMessages } from '../data';
 import { fmt, fmtDay, isoDate, isPast, ls, normName, parseIso, timeAgo } from '../utils';
 import { announceMessage, shareWhatsApp } from '../share';
 import { hiddenId } from '../testmode';
@@ -52,7 +52,7 @@ export function useChatList(convs, sessions, people, me) {
       if (!other) continue;
       items.push({ id: c.id, type: 'dm', other, title: `${other.prenom} ${other.nom || ''}`.trim(), members: c.members, c, lastAt: c.lastAt || 0 });
     }
-    for (const it of items) it.unread = !!(it.c && it.c.lastBy !== me.id && it.c.lastAt > (read[it.id] || 0));
+    for (const it of items) it.unread = !!(it.c && ((it.c.lastBy !== me.id && it.c.lastAt > Math.max(read[it.id] || 0, it.c.seen?.[me.id] || 0)) || it.c.unreadMark?.[me.id]));
     return items.sort((a, b) => (b.lastAt - a.lastAt) || (a.s && b.s ? a.s.date.localeCompare(b.s.date) : 0));
   }, [convs, sessions, people, me, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 }
@@ -216,26 +216,69 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
   const [announce, setAnnounce] = useState(false);
   const [lastAnn, setLastAnn] = useState(null);
   const [showMembers, setShowMembers] = useState(false);
-  const [reactFor, setReactFor] = useState(null); // message dont la barre de réactions est ouverte
   const [busy, setBusy] = useState(false);
+  const [menuFor, setMenuFor] = useState(null);   // message dont le menu est ouvert
+  const [replyTo, setReplyTo] = useState(null);   // message auquel on répond
+  const [editing, setEditing] = useState(null);   // message en cours de modification
+  const [copied, setCopied] = useState(false);
+  const [flash, setFlash] = useState(null);
+  const [pinIdx, setPinIdx] = useState(0);
   const end = useRef(null);
+  const input = useRef(null);
   const s = item.s;
   const isMember = item.type === 'dm' || isSessionMember(s, me.id);
   const canAnnounce = s && s.createdBy === me.id && !s.cancelled && !isPast(s.date, s.e);
+  const seen = item.c?.seen || {};
+  const members = item.members || [];
+  const name = (id) => (id === me.id ? 'toi' : byId[id]?.prenom || '?');
+  const seenBy = (m) => members.filter((id) => id !== m.by && id !== me.id && (seen[id] || 0) >= m.at);
+  const latest = msgs && msgs.length ? msgs[msgs.length - 1].at : 0;
 
-  useEffect(() => { if (msgs) { end.current?.scrollIntoView({ block: 'end' }); markRead(item.id, Math.max(Date.now(), ...msgs.map((m) => m.at))); } }, [msgs, item.id]);
+  // Lecture : on enregistre « vu » (dans la base) dès que la conversation est ouverte et à chaque nouveau message
+  useEffect(() => { if (msgs) end.current?.scrollIntoView({ block: 'end' }); }, [msgs?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!msgs) return;
+    const at = Math.max(latest, 1);
+    markRead(item.id, Math.max(Date.now(), latest));
+    if ((seen[me.id] || 0) < at || item.c?.unreadMark?.[me.id]) markSeen(item.id, me, at).catch(() => {});
+  }, [latest, msgs === null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const focus = () => setTimeout(() => input.current?.focus(), 30);
+  const startReply = (m) => { setEditing(null); setReplyTo(m); setMenuFor(null); focus(); };
+  const startEdit = (m) => { setReplyTo(null); setEditing(m); setText(m.text); setMenuFor(null); focus(); };
+  const copy = async (m) => {
+    try { await navigator.clipboard.writeText(m.text); } catch {
+      const t = document.createElement('textarea'); t.value = m.text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch { /* */ } t.remove();
+    }
+    setMenuFor(null); setCopied(true); setTimeout(() => setCopied(false), 1500);
+  };
+  const goTo = (id) => {
+    const el = document.getElementById(`msg-${id}`);
+    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setFlash(id); setTimeout(() => setFlash(null), 1400); }
+  };
+  const unread = async () => { await markUnread(item.id, me); onBack(); };
 
   const send = async () => {
     if (!text.trim() || busy) return;
     setBusy(true);
     try {
-      if (announce && canAnnounce) { await postAnnounce(s, me, text); setLastAnn(text.trim()); setAnnounce(false); }
-      else await sendMessage(item.id, me, text, item.type === 'dm' ? { type: 'dm', members: [...item.members].sort() } : { type: 'session', sessionId: s.id });
+      if (editing) { await editMessage(editing, text); setEditing(null); }
+      else if (announce && canAnnounce) { await postAnnounce(s, me, text); setLastAnn(text.trim()); setAnnounce(false); }
+      else {
+        await sendMessage(item.id, me, text, {
+          ...(item.type === 'dm' ? { type: 'dm', members: [...item.members].sort() } : { type: 'session', sessionId: s.id }),
+          ...(replyTo ? { replyTo } : {}),
+        });
+        setReplyTo(null);
+      }
       setText('');
     } finally { setBusy(false); }
   };
 
   let lastDay = '';
+  const lastMsg = msgs && msgs[msgs.length - 1];
+  const pins = (msgs || []).filter((m) => m.pinned).sort((a, b) => b.pinnedAt - a.pinnedAt);
+  const pin = pins.length ? pins[pinIdx % pins.length] : null;
   return (
     <>
       <div className="chat-top">
@@ -245,6 +288,7 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
           <b>{item.title}</b>
           {s && <span className="muted tiny">{item.sub} · {item.members.length} membres ▾</span>}
         </button>
+        {msgs && msgs.length > 0 && <button className="icon-btn" onClick={unread} aria-label="Marquer comme non lu" title="Marquer comme non lu"><MailOpen size={19} /></button>}
         <button className="icon-btn" onClick={onClose} aria-label="Fermer"><X size={20} /></button>
       </div>
       {showMembers && s && (
@@ -253,34 +297,65 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
           <button className="link tiny" onClick={() => { onClose(); onSession?.(s); }}>Voir la séance →</button>
         </div>
       )}
-      <div className="chat-scroll chat-msgs">
+      {pin && (
+        <div className="pin-bar">
+          <button className="pin-main" onClick={() => { goTo(pin.id); if (pins.length > 1) setPinIdx((i) => i + 1); }}>
+            <Pin size={15} />
+            <span className="grow">
+              <span className="pin-label">Épinglé{pins.length > 1 ? ` (${(pinIdx % pins.length) + 1}/${pins.length})` : ''} · {pin.byName?.split(' ')[0]}</span>
+              <span className="pin-text">{pin.text}</span>
+            </span>
+          </button>
+          {isMember && <button className="icon-btn" onClick={() => togglePin(pin, me)} aria-label="Désépingler" title="Désépingler"><PinOff size={15} /></button>}
+        </div>
+      )}
+      <div className="chat-scroll chat-msgs" onClick={(e) => { if (e.target === e.currentTarget) setMenuFor(null); }}>
         {msgs === null && <p className="muted tiny">Chargement…</p>}
         {msgs && !msgs.length && <p className="muted tiny chat-hint">{s ? 'Groupe de la séance : tous les inscrits y sont automatiquement. Dis bonjour !' : 'Début de la conversation.'}</p>}
+        {msgs && msgs.length > 0 && <p className="muted tiny chat-hint">Touche un message pour réagir, répondre, copier…</p>}
         {(msgs || []).map((m) => {
           const day = isoDate(new Date(m.at));
           const sep = day !== lastDay ? (lastDay = day) : null;
           const mine = m.by === me.id;
           const p = byId[m.by];
           const reacts = Object.entries(m.reacts || {}).filter(([, ids]) => ids?.length);
-          const name = (id) => (id === me.id ? 'toi' : byId[id]?.prenom || '?');
+          const open = menuFor === m.id;
+          const vus = seenBy(m);
           return (
-            <div key={m.id}>
+            <div key={m.id} id={`msg-${m.id}`} className={flash === m.id ? 'msg-flash' : ''}>
               {sep && <div className="chat-day">{fmtDay(day, { weekday: 'long', day: 'numeric', month: 'long' })}</div>}
               <div className={'msg' + (mine ? ' mine' : '') + (m.kind === 'announce' ? ' ann' : '')}>
                 {!mine && (p ? <Avatar p={p} size={26} /> : <span className="pcom-av">?</span>)}
-                <div className={'bubble' + (reactFor === m.id ? ' picked' : '')} onClick={() => setReactFor(reactFor === m.id ? null : m.id)} role="button" tabIndex={0} title="Toucher pour réagir">
+                <div className={'bubble' + (open ? ' picked' : '')} onClick={() => setMenuFor(open ? null : m.id)} role="button" tabIndex={0}>
                   {m.kind === 'announce' && <span className="ann-tag"><Megaphone size={13} /> Annonce</span>}
+                  {m.pinned && <span className="pin-tag"><Pin size={11} /> Épinglé</span>}
                   {!mine && item.type === 'session' && <span className="msg-who">{m.byName}</span>}
+                  {m.replyTo && (
+                    <span className="msg-quote" onClick={(e) => { e.stopPropagation(); goTo(m.replyTo.id); }}>
+                      <b>{m.replyTo.byName?.split(' ')[0]}</b> {m.replyTo.text}
+                    </span>
+                  )}
                   <span className="msg-text">{m.text}</span>
-                  <span className="msg-time">{new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="msg-time">{m.editedAt ? 'modifié · ' : ''}{new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                {mine && <button className="icon-btn msg-del" onClick={() => deleteMessage(m)} aria-label="Supprimer"><Trash2 size={13} /></button>}
               </div>
-              {reactFor === m.id && isMember && (
-                <div className={'react-bar' + (mine ? ' mine' : '')}>
-                  {Object.entries(REACTIONS).map(([k, e]) => (
-                    <button key={k} className={(m.reacts?.[k] || []).includes(me.id) ? 'on' : ''} onClick={() => { toggleReact(m, me, k); setReactFor(null); }} aria-label={`Réagir ${e}`}>{e}</button>
-                  ))}
+              {open && (
+                <div className={'msg-menu' + (mine ? ' mine' : '')}>
+                  {isMember && (
+                    <div className="react-bar">
+                      {Object.entries(REACTIONS).map(([k, e]) => (
+                        <button key={k} className={(m.reacts?.[k] || []).includes(me.id) ? 'on' : ''} onClick={() => { toggleReact(m, me, k); setMenuFor(null); }} aria-label={`Réagir ${e}`}>{e}</button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="msg-actions">
+                    {isMember && <button onClick={() => startReply(m)}><Reply size={15} /> Répondre</button>}
+                    <button onClick={() => copy(m)}><Copy size={15} /> Copier</button>
+                    {isMember && <button onClick={() => { togglePin(m, me); setMenuFor(null); setPinIdx(0); }}>{m.pinned ? <><PinOff size={15} /> Désépingler</> : <><Pin size={15} /> Épingler</>}</button>}
+                    {mine && <button onClick={() => startEdit(m)}><Pencil size={15} /> Modifier</button>}
+                    {mine && <button className="danger" onClick={() => { deleteMessage(m); setMenuFor(null); }}><Trash2 size={15} /> Supprimer</button>}
+                  </div>
+                  <div className="msg-seen-full"><Eye size={13} /> {vus.length ? `Vu par ${vus.map(name).join(', ')}` : 'Pas encore vu'}{mine ? '' : ''}</div>
                 </div>
               )}
               {reacts.length > 0 && (
@@ -294,11 +369,17 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
                   ))}
                 </div>
               )}
+              {m === lastMsg && !open && (vus.length > 0) && (
+                <div className={'msg-seen' + (mine ? ' mine' : '')}>
+                  <Eye size={12} /> {item.type === 'dm' ? 'Vu' : `Vu par ${vus.length > 3 ? `${vus.slice(0, 3).map(name).join(', ')} +${vus.length - 3}` : vus.map(name).join(', ')}`}
+                </div>
+              )}
             </div>
           );
         })}
         <div ref={end} />
       </div>
+      {copied && <div className="chat-toast">Message copié</div>}
       {item.archived && <p className="chat-archived"><Archive size={14} /> Groupe archivé (séance terminée). Écrire un message le réactive.</p>}
       {lastAnn && (
         <div className="ann-done">
@@ -309,15 +390,22 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
       )}
       {isMember ? (
         <div className="chat-compose">
-          {canAnnounce && (
+          {(replyTo || editing) && (
+            <div className="compose-ctx">
+              {replyTo ? <Reply size={14} /> : <Pencil size={14} />}
+              <span className="grow">{replyTo ? <>Réponse à <b>{replyTo.byName?.split(' ')[0]}</b> : « {replyTo.text.length > 60 ? replyTo.text.slice(0, 59) + '…' : replyTo.text} »</> : 'Modification de ton message'}</span>
+              <button className="icon-btn" onClick={() => { setReplyTo(null); if (editing) { setEditing(null); setText(''); } }} aria-label="Annuler"><X size={15} /></button>
+            </div>
+          )}
+          {canAnnounce && !replyTo && !editing && (
             <label className="ann-toggle">
               <input type="checkbox" checked={announce} onChange={(e) => setAnnounce(e.target.checked)} /> <Megaphone size={14} /> Envoyer comme annonce (rappel pour tous les inscrits)
             </label>
           )}
           <div className="pcom-input">
-            <input value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder={announce ? 'Ton annonce…' : 'Écris un message…'}
-              onKeyDown={(e) => { if (e.key === 'Enter') send(); }} />
-            <button className="btn primary" disabled={busy || !text.trim()} onClick={send} aria-label="Envoyer"><Send size={16} /></button>
+            <input ref={input} value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder={editing ? 'Modifie ton message…' : announce ? 'Ton annonce…' : 'Écris un message…'}
+              onKeyDown={(e) => { if (e.key === 'Enter') send(); if (e.key === 'Escape') { setReplyTo(null); setEditing(null); } }} />
+            <button className="btn primary" disabled={busy || !text.trim()} onClick={send} aria-label="Envoyer">{editing ? <Check size={16} /> : <Send size={16} />}</button>
           </div>
         </div>
       ) : <p className="chat-left muted tiny">Tu ne fais plus partie de ce groupe (tu n’es plus inscrit(e) à la séance).</p>}

@@ -5,12 +5,13 @@ import { createParticipant, deleteParticipant, log, updateParticipant } from '..
 import { capName, diffParticipant, momentsOf, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
 import { Chips, ConfirmButton, FormatIcon, MOMENT_ICON, Modal } from './ui';
 import { PinInput } from './AccessScreens';
-import { formationsOf, SUBJECTS } from '../formations';
+import { formationsOf, FORMATIONS, isHybridCombo, presCourseSubjects, SUBJECTS } from '../formations';
+import PresCoursesPick from './PresCoursesPick';
 import FormationPick from './FormationPick';
 
 const emptyDays = () => Array.from({ length: 7 }, () => []);
 
-export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, admin = false, viaCode = '' }) {
+export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, admin = false, viaCode = '', settings }) {
   const isNew = !existing;
   const usedColors = people.map((p) => p.color);
   const [prenom, setPrenom] = useState(existing?.prenom || '');
@@ -18,6 +19,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
   const [pin, setPin] = useState(existing?.pin || '');
   const [formations, setFormations] = useState(() => formationsOf(existing));
   const [subjects, setSubjects] = useState(existing?.subjects || []);
+  const [presSubjects, setPresSubjects] = useState(existing?.presSubjects);
   const [color, setColor] = useState(existing?.color || PALETTE.find((c) => !usedColors.includes(c)) || PALETTE[people.length % PALETTE.length]);
   const [freq, setFreq] = useState(existing?.freq || 2);
   const [moments, setMoments] = useState(() => momentsOf(existing || {}));
@@ -62,7 +64,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
     }
     if (!slots.length) return setErr('Ajoute au moins un créneau de dispo.');
     const data = {
-      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), formations, formation: formations[0], subjects, color, freq, moments, moment: null, format,
+      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), formations, formation: formations[0], subjects, ...(isHybridCombo({ formations }) ? { presSubjects: Array.isArray(presSubjects) ? presSubjects : presCourseSubjects({ formations, subjects }, settings) } : {}), color, freq, moments, moment: null, format,
       distance: format === 'visio' ? null : distance, note: note.trim().slice(0, 200), slots: normalizeSlots(slots),
     };
     setBusy(true);
@@ -145,6 +147,11 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
             options={Object.entries(SUBJECTS).map(([k, v]) => ({ value: k, label: v.label, color: v.color }))} />
           <small className="muted">Sert aux sondages par matière et à savoir quand tu es en cours.</small>
         </div>
+        {isHybridCombo({ formations }) && presCourseSubjects({ formations, subjects }, settings).length > 0 && (
+          <div className="field"><span>Cours suivis en présentiel <small className="muted">(Hybride + {formations.filter((f) => f !== 'hybride').map((f) => FORMATIONS[f].short).join(' + ')})</small></span>
+            <PresCoursesPick draft={{ formations, subjects }} settings={settings} value={presSubjects} onChange={setPresSubjects} />
+          </div>
+        )}
 
         <label className="field narrow"><span>Code perso (4 chiffres) *</span>
           <PinInput value={pin} onChange={setPin} />

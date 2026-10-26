@@ -6,7 +6,7 @@ import { daysCount, duplicatePairs, fmtDate, fmtDur, normName, timeAgo, totalMin
 import DispoForm from '../components/DispoForm';
 import { Avatar, ConfirmButton, Modal, PersonBadges } from '../components/ui';
 
-export default function AdminParticipants({ people, logs, polls, sessions }) {
+export default function AdminParticipants({ people, logs, polls, sessions, settings }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('nom');
   const [edit, setEdit] = useState(null); // participant | 'new'
@@ -92,7 +92,7 @@ export default function AdminParticipants({ people, logs, polls, sessions }) {
         {!list.length && <p className="muted">Aucun participant.</p>}
       </div>
 
-      {edit && <DispoForm admin existing={edit === 'new' ? null : edit} people={people} onClose={() => setEdit(null)} onSaved={() => setEdit(null)} />}
+      {edit && <DispoForm admin settings={settings} existing={edit === 'new' ? null : edit} people={people} onClose={() => setEdit(null)} onSaved={() => setEdit(null)} />}
       {merge && <MergeModal {...merge} onClose={() => setMerge(null)} />}
       {histo && <HistoModal p={histo} logs={logs} onClose={() => setHisto(null)} />}
     </div>

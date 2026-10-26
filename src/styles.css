@@ -1054,3 +1054,37 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .react-chip.on { border-color: var(--accent); background: rgba(var(--accent-rgb), .12); }
 .react-chip b { font-size: 12px; }
 .react-who { font-size: 11.5px; color: var(--muted); max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Menu d'un message (réactions + actions + vu par) */
+.msg-menu { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; margin: 2px 0 6px 32px; animation: pop .15s ease; }
+.msg-menu.mine { align-items: flex-end; margin: 2px 0 6px 0; }
+.msg-menu .react-bar { margin: 0; }
+.msg-actions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,.1); }
+.msg-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border-radius: 10px; border: none; background: none; font-size: 13.5px; font-weight: 600; color: var(--text); cursor: pointer; }
+.msg-actions button:hover { background: var(--surface-2); }
+.msg-actions button.danger { color: #DC2626; }
+.msg-seen-full { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); padding: 0 6px; }
+.msg-seen { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); margin: 0 0 4px 34px; }
+.msg-seen.mine { justify-content: flex-end; margin: 0 2px 4px 0; }
+.msg-quote { display: block; padding: 4px 8px; margin: 2px 0 3px; border-left: 3px solid var(--accent); border-radius: 6px; background: rgba(var(--accent-rgb), .08); font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; cursor: pointer; }
+.msg-quote b { color: var(--accent); margin-right: 3px; }
+.msg.mine .msg-quote { border-left-color: #fff; background: rgba(255,255,255,.18); color: rgba(255,255,255,.9); }
+.msg.mine .msg-quote b { color: #fff; }
+.msg-flash .bubble { animation: flash 1.4s ease; }
+.compose-ctx { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 10px; background: rgba(var(--accent-rgb), .08); border-left: 3px solid var(--accent); font-size: 13px; }
+.compose-ctx .icon-btn { width: 28px; height: 28px; }
+.chat-toast { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; z-index: 5; }
+.chat-main, .chat-wrap { position: relative; }
+.chat-wrap:not(.wide) { position: fixed; }
+/* Messages épinglés */
+.pin-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.pin-main { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; background: none; border: none; padding: 2px 0; text-align: left; color: var(--text); cursor: pointer; }
+.pin-main svg { color: var(--accent); flex-shrink: 0; }
+.pin-main .grow { display: flex; flex-direction: column; min-width: 0; border-left: 3px solid var(--accent); padding-left: 8px; }
+.pin-label { font-size: 11.5px; font-weight: 700; color: var(--accent); }
+.pin-text { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pin-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; opacity: .75; }
+/* Mise à jour du profil */
+.pu-step { padding: 12px 0; border-top: 1px solid var(--border); }
+.pu-step:first-of-type { border-top: none; padding-top: 4px; }
+.pu-step h4 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 8px; }
+.pu-n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }

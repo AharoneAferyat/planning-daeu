@@ -440,7 +440,8 @@ export async function sendMessage(conv, me, text, meta = {}) {
   const t = text.trim().slice(0, 1000);
   if (!t) return;
   const at = Date.now();
-  await addDoc(collection(db, 'messages'), { conv, by: me.id, byName: fullName(me), text: t, at, ...(meta.kind ? { kind: meta.kind } : {}) });
+  const reply = meta.replyTo ? { replyTo: { id: meta.replyTo.id, byName: meta.replyTo.byName, text: String(meta.replyTo.text || '').slice(0, 140) } } : {};
+  await addDoc(collection(db, 'messages'), { conv, by: me.id, byName: fullName(me), text: t, at, ...(meta.kind ? { kind: meta.kind } : {}), ...reply });
   await setDoc(doc(db, 'convs', conv), {
     lastAt: at, lastText: t.slice(0, 120), lastBy: me.id, lastByName: fullName(me),
     ...(meta.type ? { type: meta.type } : {}), ...(meta.members ? { members: meta.members } : {}), ...(meta.sessionId ? { sessionId: meta.sessionId } : {}),
@@ -468,4 +469,22 @@ export const REACTIONS = { like: '👍', love: '❤️', haha: '😂', wow: '�
 export async function toggleReact(m, me, key) {
   const on = !(m.reacts?.[key] || []).includes(me.id);
   await updateDoc(doc(db, 'messages', m.id), { [`reacts.${key}`]: on ? arrayUnion(me.id) : arrayRemove(me.id) });
+}
+// Lu / non lu côté serveur (synchronisé entre appareils) + « Vu par »
+export async function markSeen(conv, me, at) {
+  await setDoc(doc(db, 'convs', conv), { seen: { [me.id]: at }, unreadMark: { [me.id]: deleteField() } }, { merge: true });
+}
+export async function markUnread(conv, me) {
+  await setDoc(doc(db, 'convs', conv), { unreadMark: { [me.id]: true } }, { merge: true });
+}
+export async function editMessage(m, text) {
+  const t = text.trim().slice(0, 1000);
+  if (!t) return;
+  await updateDoc(doc(db, 'messages', m.id), { text: t, editedAt: Date.now() });
+}
+// Messages épinglés
+export async function togglePin(m, me) {
+  await updateDoc(doc(db, 'messages', m.id), m.pinned
+    ? { pinned: deleteField(), pinnedBy: deleteField(), pinnedAt: deleteField() }
+    : { pinned: true, pinnedBy: `${me.prenom} ${me.nom || ''}`.trim(), pinnedAt: Date.now() });
 }

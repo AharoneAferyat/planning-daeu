@@ -79,13 +79,24 @@ export function conflictsFor(settings, formations, iso, s, e) {
 }
 
 // Une personne n'est en cours que pendant SES matières (toutes si elle n'en a pas choisi)
-export const personCoursesAt = (p, settings, iso, d, s, e) => coursesAt(settings, formationsOf(p), p.subjects, iso, d, s, e);
+// Hybride + Jour / Soir : la personne choisit les matières qu'elle suit en présentiel (presSubjects).
+// Les autres sont suivies en hybride (à distance, sans horaire fixe) : elles ne bloquent pas ses dispos.
+export const isHybridCombo = (p) => { const fs = formationsOf(p); return fs.includes('hybride') && (fs.includes('jour') || fs.includes('soir')); };
+export const courseBlocks = (p, course) => !isHybridCombo(p) || !Array.isArray(p.presSubjects) || p.presSubjects.includes(course.subject);
+// Matières qui ont des cours en présentiel dans les formations Jour / Soir de la personne (limitées à ses matières)
+export function presCourseSubjects(p, settings) {
+  const fs = formationsOf(p).filter((f) => f !== 'hybride');
+  const set = new Set(fs.flatMap((f) => (schedulesOf(settings)[f] || []).map((c) => c.subject)));
+  return SUBJECT_KEYS.filter((k) => set.has(k) && (!p.subjects?.length || p.subjects.includes(k)));
+}
+
+export const personCoursesAt = (p, settings, iso, d, s, e) => coursesAt(settings, formationsOf(p), p.subjects, iso, d, s, e).filter((c) => courseBlocks(p, c));
 
 // Dispos réelles : on retire les heures de cours de la personne.
 // Avec une date (iso + jour d) : seulement ce jour-là, en tenant compte des vacances et des dates de cours.
 export function withoutCourses(p, settings, iso = null, d = null) {
   const courses = formationsOf(p).flatMap((f) => schedulesOf(settings)[f] || [])
-    .filter((x) => subjectsOk(x, p.subjects) && (d === null || x.d === d) && courseActive(settings, x, iso));
+    .filter((x) => subjectsOk(x, p.subjects) && courseBlocks(p, x) && (d === null || x.d === d) && courseActive(settings, x, iso));
   if (!courses.length) return p;
   const out = [];
   for (const sl of p.slots || []) {

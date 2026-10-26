@@ -187,6 +187,7 @@ const FIELDS = {
   nom: 'Nom',
   formations: 'Formations',
   subjects: 'Matières',
+  presSubjects: 'Cours en présentiel',
   pin: 'Code perso',
   color: 'Couleur',
   freq: 'Fréquence',
@@ -198,6 +199,7 @@ const FIELDS = {
 const show = (k, v) => {
   if (v === null || v === undefined || v === '') return '—';
   if (k === 'pin') return '••••';
+  if (k === 'presSubjects') return Array.isArray(v) ? (v.length ? v.map((m) => ({ maths: 'Maths', physique: 'Physique', chimie: 'Chimie', bio: 'Biologie', francais: 'Français' })[m] || m).join(', ') : 'aucun') : '—';
   if (k === 'subjects') return (v || []).length ? v.map((m) => ({ maths: 'Maths', physique: 'Physique', chimie: 'Chimie', bio: 'Biologie', francais: 'Français' })[m] || m).join(', ') : 'toutes';
   if (k === 'formations') return (v || []).map((f) => ({ jour: 'Jour', soir: 'Soir', hybride: 'Hybride' })[f] || f).join(' + ') || '—';
   if (k === 'freq') return `${v}×/sem`;

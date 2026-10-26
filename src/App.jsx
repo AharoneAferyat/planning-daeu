@@ -21,7 +21,7 @@ import PollsView, { PollForm, SessionForm, SessionSheet } from './components/Pol
 import { Avatar, Spinner, Toast } from './components/ui';
 import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
-import FormationPrompt, { needsFormationPrompt } from './components/FormationPrompt';
+import ProfileUpdate, { pendingSteps } from './components/ProfileUpdate';
 import { isTestId, stopViewAs, viewAsId } from './testmode';
 import { isOpenPoll } from './places';
 import { canSee, formationsOf, FORMATIONS, inAudience, subjectOk } from './formations';
@@ -119,7 +119,7 @@ function PublicApp() {
   const viewSessions = useMemo(() => seeSessions.filter(inView), [seeSessions, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
   // Ouvre la cible du lien direct dès que la personne est connectée
   useEffect(() => {
-    if (!me || !goto || !polls || !sessions || needsFormationPrompt(me)) return;
+    if (!me || !goto || !polls || !sessions || (pendingSteps(me, settings).length && !promptDone)) return;
     ss.del('ge_goto'); setGoto(null);
     window.history.replaceState(null, '', window.location.pathname);
     if (goto.type === 'poll') {
@@ -168,7 +168,7 @@ function PublicApp() {
       <>
         <Identity settings={settings} people={people} onLogin={login} onNew={() => setCreating(true)} />
         {creating && (
-          <DispoForm people={people} viaCode={code} onClose={() => setCreating(false)}
+          <DispoForm people={people} settings={settings} viaCode={code} onClose={() => setCreating(false)}
             onIsMe={(p) => { setCreating(false); setPinFor(p); }}
             onSaved={(id) => { ls.set('ge_pid', id); setPid(id); setCreating(false); setToast('Bienvenue ! Tes dispos sont enregistrées.'); }} />
         )}
@@ -297,7 +297,7 @@ function PublicApp() {
       </main>
 
 
-      {editing && <DispoForm existing={me} people={people} onClose={() => setEditing(false)}
+      {editing && <DispoForm existing={me} people={people} settings={settings} onClose={() => setEditing(false)}
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
       {cell && <CellSheet cell={cell} people={filtered} settings={settings} meId={me.id} onClose={() => setCell(null)}
         onPlan={(x) => { setCell(null); planFromSlot(x); }} />}
@@ -313,8 +313,8 @@ function PublicApp() {
         onClose={() => { setPollForm(null); setView('seances'); }} />}
       {sessionForm && <SessionForm initial={sessionForm.initial} prefill={sessionForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}
         onClose={() => setSessionForm(null)} />}
-      {needsFormationPrompt(me) && !promptDone ? (
-        <FormationPrompt me={me} onDone={(f) => { setPromptDone(true); if (f) { setCat(f); setToast(`C'est noté : ${FORMATIONS[f].label}`); } }} />
+      {pendingSteps(me, settings).length > 0 && !promptDone ? (
+        <ProfileUpdate me={me} settings={settings} onDone={(patch) => { setPromptDone(true); const f = patch.formations; if (f?.length === 1) setCat(f[0]); setToast('C’est noté, merci !'); }} />
       ) : <AlertsPopup skip={deepLinked} unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
       <Toast text={toast} onDone={clearToast} />
     </div>

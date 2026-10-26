@@ -2,7 +2,7 @@ import { Fragment, useMemo } from 'react';
 import { CalendarCheck, CalendarX2, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { DAYS_SHORT } from '../constants';
 import { addDays, fmt, isoDate, timeRange, weekStartOf } from '../utils';
-import { coursesAt, holidayOn, SUBJECTS, withoutCourses } from '../formations';
+import { courseBlocks, coursesAt, holidayOn, SUBJECTS, withoutCourses } from '../formations';
 
 export function WeekNav({ weekStart, setWeekStart }) {
   const end = addDays(weekStart, 6);
@@ -83,7 +83,7 @@ export default function WeekView({ people, sessions, weekStart, setWeekStart, hi
               const cancelled = weekSessions.some((s) => s.cancelled && s.date === dates[d] && s.s < h + 60 && s.e > h);
               const mine = meId && ps.some((p) => p.id === meId);
               const hl = hlPerson && ps.some((p) => p.id === hlPerson.id);
-              const course = courseOf ? coursesAt(settings, courseOf.formation, courseOf.subjects, dates[d], d, h, h + 60) : [];
+              const course = courseOf ? coursesAt(settings, courseOf.formation, courseOf.subjects, dates[d], d, h, h + 60).filter((c) => !courseOf.person || courseBlocks(courseOf.person, c)) : [];
               return (
                 <button key={d}
                   className={'hm-cell' + (n ? '' : ' zero') + (a > 0.55 ? ' dark' : '') + (sess ? ' sess' : '') + (hl ? ' hl' : '') + (dates[d] === todayIso ? ' today' : '') + (course.length ? ' course' : '') + (cancelled && !sess ? ' sess-x' : '')}

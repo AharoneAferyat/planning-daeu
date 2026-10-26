@@ -24,7 +24,7 @@ import CatBar from './components/CatBar';
 import ProfileUpdate, { pendingSteps } from './components/ProfileUpdate';
 import { isReadOnly, isTestId, stopViewAs, viewAsId } from './testmode';
 import { isOpenPoll } from './places';
-import { canSee, formationsOf, FORMATIONS, inAudience, subjectOk } from './formations';
+import { canSee, formationsOf, FORMATIONS, inAudience, isHybridCombo, subjectOk } from './formations';
 import { log as logAction, updateParticipant } from './data';
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 
@@ -288,7 +288,7 @@ function PublicApp() {
         )}
 
         {view === 'semaine' && <WeekView people={filtered} sessions={viewSessions} settings={settings}
-          courseOf={cat !== 'all' ? { formation: cat, subjects: sub === 'all' ? null : [sub], label: 'cours' } : formationsOf(me).length ? { formation: formationsOf(me), subjects: me.subjects, label: 'tes cours' } : null} weekStart={weekStart} setWeekStart={setWeekStart}
+          courseOf={cat !== 'all' ? { formation: cat, subjects: sub === 'all' ? null : [sub], label: formationsOf(me).includes(cat) ? 'tes cours' : 'cours', ...(formationsOf(me).includes(cat) ? { person: me } : {}) } : formationsOf(me).length ? { formation: formationsOf(me), subjects: me.subjects, person: me, label: isHybridCombo(me) ? 'tes cours en présentiel' : 'tes cours' } : null} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} onCell={setCell} onSession={setSessionOpen} meId={me.id} />}
         {view === 'jours' && <DayView people={filtered} sessions={viewSessions} settings={settings} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} setHighlight={setHighlight} meId={me.id} onSession={setSessionOpen} />}

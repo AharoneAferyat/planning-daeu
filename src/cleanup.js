@@ -1,6 +1,6 @@
 // Ménage automatique : suppression des séances et sondages terminés depuis longtemps.
 // Pas de serveur : le ménage est lancé par les visiteurs, au plus une fois par jour et par appareil.
-import { deleteDoc, doc } from 'firebase/firestore';
+import { deleteDoc, doc } from './fs';
 import { db } from './firebase';
 import { deleteConv, log, sessionConvId } from './data';
 import { isoDate, ls } from './utils';

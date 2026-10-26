@@ -1088,3 +1088,11 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .pu-step:first-of-type { border-top: none; padding-top: 4px; }
 .pu-step h4 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-bottom: 8px; }
 .pu-n { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.chat-item-wrap { margin-bottom: 6px; }
+.chat-item-wrap .chat-item { margin-bottom: 0; -webkit-touch-callout: none; user-select: none; }
+.ci-menu { display: flex; gap: 4px; margin: 4px 0 0 48px; }
+.ci-menu button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; }
+.test-banner.ro { background: #0E7490; }
+.who-test { cursor: default; }
+.who-test .btn { flex-shrink: 0; }
+.who-test .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

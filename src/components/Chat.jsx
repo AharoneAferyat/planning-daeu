@@ -116,11 +116,12 @@ export default function ChatPanel({ initialConv, list, people, me, onClose, onSe
       <div className="chat-scroll">
         <button className="btn primary chat-new" onClick={() => setPicking(true)}><Plus size={16} /> Nouveau message privé</button>
         <p className="muted tiny chat-hint">Pas de notification : pense à passer voir tes messages. Les groupes de séance se créent tout seuls avec les inscrits.</p>
-        <ListSection title="Groupes de séance" items={list.filter((x) => x.type === 'session' && !x.archived)} byId={byId} onOpen={setConv} activeId={current?.id}
+        <ListSection title="Groupes de séance" items={list.filter((x) => x.type === 'session' && !x.archived)} byId={byId} onOpen={setConv} activeId={current?.id} me={me}
           empty="Inscris-toi à une séance pour rejoindre son groupe." />
-        <ListSection title="Messages privés" items={list.filter((x) => x.type === 'dm')} byId={byId} onOpen={setConv} activeId={current?.id}
+        <ListSection title="Messages privés" items={list.filter((x) => x.type === 'dm')} byId={byId} onOpen={setConv} activeId={current?.id} me={me}
           empty="Aucun message privé pour l’instant." />
-        <ArchivedSection items={list.filter((x) => x.archived)} byId={byId} onOpen={setConv} activeId={current?.id} />
+        <ArchivedSection items={list.filter((x) => x.archived)} byId={byId} onOpen={setConv} activeId={current?.id} me={me} />
+        <p className="muted tiny chat-hint">Astuce : appui long (ou clic droit) sur une conversation pour la marquer comme lue / non lue.</p>
       </div>
     </>
   );
@@ -168,13 +169,21 @@ function ArchivedSection({ items, ...rest }) {
   );
 }
 
-function ListSection({ title, items, byId, onOpen, empty, activeId }) {
+function ListSection({ title, items, byId, onOpen, empty, activeId, me }) {
+  const [menu, setMenu] = useState(null);
+  const timer = useRef(null);
+  const press = (id) => { timer.current = setTimeout(() => { setMenu(id); timer.current = 'done'; }, 500); };
+  const release = () => { if (timer.current && timer.current !== 'done') clearTimeout(timer.current); };
   return (
     <section className="chat-sec">
       {title && <h4>{title}</h4>}
       {!items.length && <p className="muted tiny">{empty}</p>}
       {items.map((it) => (
-        <button key={it.id} className={'chat-item' + (it.unread ? ' unread' : '') + (it.id === activeId ? ' active' : '')} onClick={() => onOpen(it.id)}>
+        <div key={it.id} className="chat-item-wrap">
+        <button className={'chat-item' + (it.unread ? ' unread' : '') + (it.id === activeId ? ' active' : '')}
+          onClick={() => { if (timer.current === 'done') { timer.current = null; return; } onOpen(it.id); }}
+          onContextMenu={(e) => { e.preventDefault(); setMenu(it.id); }}
+          onPointerDown={() => press(it.id)} onPointerUp={release} onPointerLeave={release}>
           {it.type === 'dm' ? <Avatar p={it.other} size={38} /> : <span className="chat-gico" style={{ '--sc': it.s?.color }}><Users size={18} /></span>}
           <span className="grow ci-main">
             <span className="ci-top"><b>{it.title}</b>{it.c?.lastAt ? <span className="muted tiny">{timeAgo(it.c.lastAt)}</span> : null}</span>
@@ -184,6 +193,15 @@ function ListSection({ title, items, byId, onOpen, empty, activeId }) {
           </span>
           {it.unread && <i className="ci-dot" />}
         </button>
+        {menu === it.id && me && (
+          <div className="ci-menu">
+            {it.unread
+              ? <button onClick={() => { markSeen(it.id, me, Math.max(Date.now(), it.c?.lastAt || 0)); markRead(it.id); setMenu(null); }}><Eye size={14} /> Marquer comme lu</button>
+              : <button disabled={!it.c} onClick={() => { markUnread(it.id, me); setMenu(null); }}><MailOpen size={14} /> Marquer comme non lu</button>}
+            <button onClick={() => setMenu(null)}><X size={14} /></button>
+          </div>
+        )}
+        </div>
       ))}
     </section>
   );
@@ -288,7 +306,7 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
           <b>{item.title}</b>
           {s && <span className="muted tiny">{item.sub} · {item.members.length} membres ▾</span>}
         </button>
-        {msgs && msgs.length > 0 && <button className="icon-btn" onClick={unread} aria-label="Marquer comme non lu" title="Marquer comme non lu"><MailOpen size={19} /></button>}
+        {msgs && msgs.length > 0 && <button className={wide ? 'btn small ghost' : 'icon-btn'} onClick={unread} aria-label="Marquer comme non lu" title="Marquer comme non lu"><MailOpen size={wide ? 15 : 19} />{wide && ' Non lu'}</button>}
         <button className="icon-btn" onClick={onClose} aria-label="Fermer"><X size={20} /></button>
       </div>
       {showMembers && s && (
@@ -351,6 +369,7 @@ function Conversation({ item, me, byId, wide, onBack, onClose, onSession }) {
                   <div className="msg-actions">
                     {isMember && <button onClick={() => startReply(m)}><Reply size={15} /> Répondre</button>}
                     <button onClick={() => copy(m)}><Copy size={15} /> Copier</button>
+                    <button onClick={() => { setMenuFor(null); unread(); }}><MailOpen size={15} /> Non lu</button>
                     {isMember && <button onClick={() => { togglePin(m, me); setMenuFor(null); setPinIdx(0); }}>{m.pinned ? <><PinOff size={15} /> Désépingler</> : <><Pin size={15} /> Épingler</>}</button>}
                     {mine && <button onClick={() => startEdit(m)}><Pencil size={15} /> Modifier</button>}
                     {mine && <button className="danger" onClick={() => { deleteMessage(m); setMenuFor(null); }}><Trash2 size={15} /> Supprimer</button>}

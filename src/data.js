@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   addDoc, arrayRemove, arrayUnion, collection, deleteDoc, deleteField, doc, getDoc, getDocs,
   increment, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch,
-} from 'firebase/firestore';
+} from './fs';
 import { db } from './firebase';
 import { DEFAULT_SETTINGS } from './config';
 import { fmt, fmtDayShort, shortUA, toDate, normalizeSlots } from './utils';
@@ -472,7 +472,7 @@ export async function toggleReact(m, me, key) {
 }
 // Lu / non lu côté serveur (synchronisé entre appareils) + « Vu par »
 export async function markSeen(conv, me, at) {
-  await setDoc(doc(db, 'convs', conv), { seen: { [me.id]: at }, unreadMark: { [me.id]: deleteField() } }, { merge: true });
+  await setDoc(doc(db, 'convs', conv), { seen: { [me.id]: at }, unreadMark: { [me.id]: false } }, { merge: true });
 }
 export async function markUnread(conv, me) {
   await setDoc(doc(db, 'convs', conv), { unreadMark: { [me.id]: true } }, { merge: true });

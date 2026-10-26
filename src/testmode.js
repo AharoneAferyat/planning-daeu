@@ -10,5 +10,11 @@ export const isTestId = (id) => typeof id === 'string' && id.startsWith('test_')
 // Les traces du profil test sont invisibles pour tout le monde, sauf en mode test
 export const hiddenId = (id) => isTestId(id) && !inTestMode();
 
-export function startViewAs(id) { ss.set('ge_as', id); ss.del('ge_polls_later'); window.location.href = '/'; }
-export function stopViewAs(toAdmin = true) { ss.del('ge_as'); window.location.href = toAdmin ? '/admin' : '/'; }
+// readOnly : on regarde le site au nom de la personne sans rien enregistrer
+export function startViewAs(id, readOnly = false) {
+  ss.set('ge_as', id); ss.del('ge_polls_later');
+  if (readOnly) ss.set('ge_ro', '1'); else ss.del('ge_ro');
+  window.location.href = '/';
+}
+export function stopViewAs(toAdmin = true) { ss.del('ge_as'); ss.del('ge_ro'); window.location.href = toAdmin ? '/admin' : '/'; }
+export const isReadOnly = () => !!viewAsId() && ss.get('ge_ro') === '1';

@@ -22,7 +22,7 @@ import { Avatar, Spinner, Toast } from './components/ui';
 import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
 import ProfileUpdate, { pendingSteps } from './components/ProfileUpdate';
-import { isTestId, stopViewAs, viewAsId } from './testmode';
+import { isReadOnly, isTestId, stopViewAs, viewAsId } from './testmode';
 import { isOpenPoll } from './places';
 import { canSee, formationsOf, FORMATIONS, inAudience, subjectOk } from './formations';
 import { log as logAction, updateParticipant } from './data';
@@ -81,6 +81,8 @@ function PublicApp() {
   const [sessionForm, setSessionForm] = useState(null);
   const [menu, setMenu] = useState(false);
   const [toast, setToast] = useState('');
+  // Lecture seule : prévenir quand une action n'est pas enregistrée
+  useEffect(() => { const f = () => setToast('👁 Lecture seule : rien n’est enregistré'); window.addEventListener('ge-ro-blocked', f); return () => window.removeEventListener('ge-ro-blocked', f); }, []);
   const clearToast = useCallback(() => setToast(''), []);
 
   useEffect(() => { ls.set('ge_view', view); }, [view]);
@@ -209,8 +211,8 @@ function PublicApp() {
   return (
     <div className="app">
       {viewAs && (
-        <div className="test-banner">
-          <span><b>Mode test</b> · tu vois le site comme <b>{me.prenom} {me.nom}</b>{isTestId(me.id) ? ' (profil invisible des autres)' : ' — attention, tes actions sont réelles en son nom'}</span>
+        <div className={'test-banner' + (isReadOnly() ? ' ro' : '')}>
+          <span>{isReadOnly() ? <><b>👁 Lecture seule</b> · tu vois le site comme <b>{me.prenom} {me.nom}</b> — rien n'est enregistré</> : <><b>Mode test</b> · tu vois le site comme <b>{me.prenom} {me.nom}</b>{isTestId(me.id) ? ' (profil invisible des autres)' : ' — attention, tes actions sont réelles en son nom'}</>}</span>
           <span className="tb-btns">
             <button className="btn small" onClick={() => stopViewAs(true)}>Retour admin</button>
           </span>

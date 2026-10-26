@@ -64,15 +64,17 @@ export default function AdminTest({ people, polls, sessions }) {
 
       <div className="card">
         <h4 className="card-title"><Eye size={18} /> Voir le site comme un participant</h4>
-        <p className="alert warn tiny"><AlertTriangle size={16} /> <span>Ici tu es <b>vraiment</b> connecté en tant que cette personne : ses votes, inscriptions et modifications seront réels. Idéal pour vérifier ce qu'elle voit.</span></p>
+        <p className="muted tiny"><b>👁 Voir</b> (lecture seule, conseillé) : tu vois exactement ce qu'elle voit et tu peux tout essayer, mais <b>rien n'est enregistré</b> (ni votes, ni messages, ni « vu »).</p>
+        <p className="alert warn tiny"><AlertTriangle size={16} /> <span><b>✏️ Agir en son nom</b> : tu es <b>vraiment</b> connecté en tant que cette personne, ses votes, inscriptions et messages seront réels.</span></p>
         <div className="search"><Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Chercher un participant…" /></div>
         <div className="who-list test-list">
           {list.map((p) => (
-            <button key={p.id} className="who" onClick={() => startViewAs(p.id)}>
+            <div key={p.id} className="who who-test">
               <Avatar p={p} size={30} />
-              <span className="grow">{p.prenom} <b>{p.nom}</b></span>
-              <span className="muted tiny">{formationsLabel(p) || 'sans formation'}</span>
-            </button>
+              <span className="grow">{p.prenom} <b>{p.nom}</b><br /><span className="muted tiny">{formationsLabel(p) || 'sans formation'}</span></span>
+              <button className="btn small primary" onClick={() => startViewAs(p.id, true)} title="Voir sans rien enregistrer">👁 Voir</button>
+              <button className="btn small ghost" onClick={() => startViewAs(p.id)} title="Actions réelles en son nom">✏️</button>
+            </div>
           ))}
         </div>
       </div>

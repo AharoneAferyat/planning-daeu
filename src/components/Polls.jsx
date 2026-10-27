@@ -15,6 +15,11 @@ import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfo
 import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
+import { InvitePicker } from './Circles';
+import { SpotPickField, spotPlace } from './Spots';
+import { spotInfo } from '../spots';
+import { canSeeSpot, conditionsOf, mapsLink, spotStatus, useSpotsStore } from '../spots';
+import { invitedIds, privateLabel } from '../privacy';
 import { isSessionMember, openChat, SessionChatBlock } from './Chat';
 import { CreatorAttendance } from './Attendance';
 import { sessionConvId } from '../data';
@@ -61,7 +66,7 @@ function Fold({ title, count, children }) {
   );
 }
 
-export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm, onPollTouched, settings }) {
+export default function PollsView({ polls, sessions, people, me, isAdmin, onSession, openPollForm, openSessionForm, onPollTouched, settings, flaky, onSpots }) {
   const today = isoDate(new Date());
   const upcoming = sessions.filter((s) => !isPast(s.date, s.e) && !s.cancelled);
   const cancelledSessions = sessions.filter((s) => !isPast(s.date, s.e) && s.cancelled);
@@ -69,7 +74,7 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
   const open = polls.filter(isOpenPoll);
   const closed = polls.filter((p) => p.status === 'closed');
   const cancelledPolls = polls.filter((p) => p.status === 'cancelled');
-  const card = (p, extra = {}) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} onEdit={() => openPollForm(p)} {...extra} />;
+  const card = (p, extra = {}) => <PollCard key={p.id} poll={p} people={people} me={me} isAdmin={isAdmin} settings={settings} flaky={flaky} onEdit={() => openPollForm(p)} {...extra} />;
   const row = (s) => <SessionRow key={s.id} s={s} people={people} me={me} onClick={() => onSession(s)} isToday={s.date === today} maybe={isMaybe(s, polls, me?.id)} />;
 
   return (
@@ -77,6 +82,7 @@ export default function PollsView({ polls, sessions, people, me, isAdmin, onSess
       <div className="pv-actions">
         <button className="btn primary" onClick={() => openPollForm(null)}><Vote size={17} /> Nouveau sondage</button>
         <button className="btn" onClick={() => openSessionForm(null)}><CalendarPlus size={17} /> Planifier une séance</button>
+        {onSpots && <button className="btn" onClick={onSpots}><MapPin size={17} /> Spots</button>}
       </div>
 
       <h3 className="sec-title"><CalendarCheck size={18} /> Séances à venir</h3>
@@ -156,7 +162,7 @@ function optionGroups(poll, o, allPeople, settings) {
   };
 }
 
-function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, settings }) {
+function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, settings, flaky }) {
   const closed = poll.status === 'closed' || poll.status === 'cancelled';
   const isCancelled = poll.status === 'cancelled';
   const myVotes = (me && poll.votes?.[me.id]) || {};
@@ -327,7 +333,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
       </div>
 
       {detail && (
-        <PeopleModal meId={me?.id} onClose={() => setDetail(null)}
+        <PeopleModal meId={me?.id} warn={canManage ? flaky : null} onClose={() => setDetail(null)}
           after={<PollComments poll={poll} me={me} people={people} canModerate={canManage} optId={detail.id} />}
           title={`${fmtDay(detail.date, { weekday: 'long', day: 'numeric', month: 'short' })} · ${fmt(detail.s)}–${fmt(detail.e)}`}
           subtitle={poll.title}
@@ -350,22 +356,24 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
             { label: 'Pas encore voté', color: '#9CA3AF', people: notVoted },
           ]} />
       )}
-      {closing && <ClosePollModal poll={poll} scores={scores} me={me} onClose={() => setClosing(false)} />}
+      {closing && <ClosePollModal poll={poll} scores={scores} me={me} settings={settings} onClose={() => setClosing(false)} />}
     </div>
   );
 }
 
-function ClosePollModal({ poll, scores, me, onClose }) {
+function ClosePollModal({ poll, scores, me, onClose, settings }) {
   const sorted = [...poll.options].sort((a, b) => scores[b.id].score - scores[a.id].score);
   const [optId, setOptId] = useState(sorted[0]?.id);
   const [format, setFormat] = useState(poll.format || 'hybride');
-  const [info, setInfo] = useState({ place: poll.place || '' });
+  const allSpots = useSpotsStore();
+  const [spotId, setSpotId] = useState(poll.spotId || null);
+  const [info, setInfo] = useState(() => { const sp = allSpots.find((x) => x.id === poll.spotId); return sp ? spotInfo(sp) : { place: poll.place || '' }; });
   const [notify, setNotify] = useState(true);
   const [busy, setBusy] = useState(false);
   const go = async () => {
     setBusy(true);
     const extra = infoData(format, info);
-    const id = await closePoll(poll, poll.options.find((o) => o.id === optId), { format, notify, infoData: extra }, actorName(me));
+    const id = await closePoll(poll, poll.options.find((o) => o.id === optId), { format, notify, infoData: extra, spotId }, actorName(me));
     if (extra.info) markInfoSeen(id);
     setBusy(false); onClose();
   };
@@ -390,6 +398,7 @@ function ClosePollModal({ poll, scores, me, onClose }) {
           {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </label>
+      {(() => { const o = poll.options.find((x) => x.id === optId); return o && <SpotPickField me={me} settings={settings} slots={[{ date: o.date, s: o.s, e: o.e }]} value={spotId} onPick={(sp) => { setSpotId(sp?.id || null); if (sp) setInfo((x) => ({ ...x, ...spotInfo(sp), note: [x.note, spotInfo(sp).note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join('\n') })); }} />; })()}
       <InfoFields format={format} value={info} onChange={setInfo} />
       <p className="places-fixed">
         <b>Places :</b> {poll.max ? `${poll.max} max (fixé par le sondage : au-delà, liste d'attente)` : 'illimitées (tout le monde pourra rejoindre)'}
@@ -410,8 +419,10 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   const [audience, setAudience] = useState(initial?.audience || (initial?.id ? [] : defaultAudience.length ? defaultAudience : formationsOf(me)));
   const [subject, setSubject] = useState(initial?.subject || (initial?.id ? '' : defaultSubject));
   const [respectSchedule, setRespectSchedule] = useState(initial?.respectSchedule !== false);
+  const [invite, setInvite] = useState({ private: !!initial?.private, ids: initial?.invite?.ids || [], circles: initial?.invite?.circles || [] });
   const [imAvailable, setImAvailable] = useState(true);
   const [place, setPlace] = useState(initial?.place || '');
+  const [spotId, setSpotId] = useState(initial?.spotId || null);
   const [deadline, setDeadline] = useState(initial?.deadline || '');
   const [max, setMax] = useState(initial?.max || '');
   const [min, setMin] = useState(initial?.min || '');
@@ -441,8 +452,9 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
     }
     if (opts.length < 1) return setErr('Ajoute au moins une date.');
     if (Number(min) && Number(max) && Number(min) > Number(max)) return setErr('Le minimum ne peut pas dépasser le maximum.');
+    if (invite.private && !invitedIds({ invite }).filter((x) => x !== me?.id).length) return setErr('Sur invitation : choisis au moins une personne ou un cercle.');
     opts.sort((a, b) => (a.date + a.s).localeCompare(b.date + b.s));
-    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts };
+    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
     setBusy(true);
     try {
       if (isEdit) {
@@ -471,7 +483,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
             {Object.entries(SESSION_FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
-        <label className="field"><span>Lieu (optionnel)</span><input value={place} onChange={(e) => setPlace(e.target.value)} /></label>
+        <label className="field"><span>Lieu (optionnel)</span><input value={place} onChange={(e) => { setPlace(e.target.value); setSpotId(null); }} /></label>
         <label className="field"><span>Répondre avant le</span><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
       </div>
       {!isEdit && me && me.id !== 'admin' && (
@@ -481,8 +493,10 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
             <small className="muted">Tu es compté(e) « Oui » partout dès la publication. Décoche si tu crées le sondage pour d'autres ; tu peux changer ton vote à tout moment.</small></span>
         </label>
       )}
+      <SpotPickField me={me} settings={settings} slots={options.map((o) => ({ date: o.date, s: toMin(o.sh), e: toMin(o.eh) }))} value={spotId} onPick={(sp) => { setSpotId(sp?.id || null); if (sp) setPlace(sp.name); }} />
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} />
-      <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject}
+      <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />
+      <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject} hideFormations={invite.private}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
 
       <h3 className="fsub">Dates proposées</h3>
@@ -515,12 +529,14 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
 }
 
 // =================== Séances ===================
-export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = [] }) {
+export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = [], flaky }) {
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const st = sessionState(s, me?.id);
   const att = st.att.map((id) => byId[id]).filter(Boolean);
   const waiting = st.wait.map((id) => byId[id]).filter(Boolean);
   const maybes = maybesOf(s, polls).map((id) => byId[id]).filter(Boolean);
+  const spotsAll = useSpotsStore();
+  const spot = s.spotId && spotsAll.find((x) => x.id === s.spotId && canSeeSpot(x, me));
   const iMaybe = !st.cancelled && me && maybes.some((p) => p.id === me.id);
   const canManage = isAdmin || (me && s.createdBy === me.id);
   const [busy, setBusy] = useState(false);
@@ -567,6 +583,9 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <p><Users size={16} /> {SESSION_FORMATS[s.format] || s.format}</p>
         {s.place && <p><MapPin size={16} /> {/^https?:\/\//.test(s.place) ? <a href={s.place} target="_blank" rel="noreferrer">{s.place}</a> : s.place}</p>}
         {s.note && <p className="muted">{s.note}</p>}
+        {spot && (
+          <p className="sess-spot"><MapPin size={16} /> <span><b>{spot.name}</b>{spot.address && <> · <a href={mapsLink(spot)} target="_blank" rel="noreferrer">plan</a></>}{conditionsOf(spot).length > 0 && <span className="spot-tags">{conditionsOf(spot).map((c) => <span key={c} className="spot-cond">{c}</span>)}</span>}{(() => { const st = spotStatus(spot, s.date, s.s, s.e, null); return st.key !== 'open' && st.key !== 'unknown' ? <span className="pill warn">⚠️ {st.label}</span> : null; })()}</span></p>
+        )}
         <AudiencePill item={s} />
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
@@ -672,7 +691,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         </div>
       )}
       {msg && <p className="alert ok-alert">{msg}</p>}
-      <PeopleGroups meId={me?.id} groups={[
+      <PeopleGroups meId={me?.id} warn={canManage ? flaky : null} groups={[
         ...(st.hybrid ? [
           { label: st.max ? `En présentiel (${st.pres.length}/${st.max})` : 'En présentiel', color: '#16A34A', people: att.filter((p) => st.pres.includes(p.id)), showEmpty: true },
           { label: 'En visio', color: '#0E7490', people: att.filter((p) => st.visio.includes(p.id)), extra: (p) => (st.wait.includes(p.id) ? `attente présentiel n°${st.wait.indexOf(p.id) + 1}` : '') },
@@ -698,8 +717,10 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const [audience, setAudience] = useState(base.audience || (isEdit ? [] : defaultAudience.length ? defaultAudience : formationsOf(me)));
   const [subject, setSubject] = useState(base.subject || (isEdit ? '' : defaultSubject));
   const [respectSchedule, setRespectSchedule] = useState(base.respectSchedule !== false);
+  const [invite, setInvite] = useState({ private: !!base.private, ids: base.invite?.ids || [], circles: base.invite?.circles || [] });
   const [place, setPlace] = useState(base.place || '');
   const [info, setInfo] = useState({});
+  const [spotId, setSpotId] = useState(base.spotId || null);
   const [note, setNote] = useState(base.note || '');
   const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
   const [notify, setNotify] = useState(base.notify !== false);
@@ -723,10 +744,11 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
     if (e <= s) return setErr('La fin doit être après le début.');
     const m = Number(max) || null;
     if (Number(min) && m && Number(min) > m) return setErr('Le minimum ne peut pas dépasser le maximum.');
+    if (invite.private && !invitedIds({ invite }).filter((x) => x !== me?.id).length) return setErr('Sur invitation : choisis au moins une personne ou un cercle.');
     let att = [...attendees];
     let wait = (base.waitlist || []).filter((x) => !att.includes(x));
     if (m && att.length > m) { wait = [...att.slice(m), ...wait]; att = att.slice(0, m); }
-    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify, audience, subject: subject || null, respectSchedule };
+    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify, audience, subject: subject || null, respectSchedule, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
     setBusy(true);
     try {
       if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
@@ -758,11 +780,13 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
         </label>
         {isEdit && <label className="field"><span>Lieu / lien visio</span><input value={place} onChange={(ev) => setPlace(ev.target.value)} /></label>}
       </div>
+      <SpotPickField me={me} settings={settings} slots={[{ date, s, e: e0 === 0 || e0 === 1439 ? 1440 : e0 }]} value={spotId} onPick={(sp) => { setSpotId(sp?.id || null); if (sp) { if (isEdit) setPlace(sp.name); else setInfo((x) => ({ ...x, ...spotInfo(sp), note: [x.note, spotInfo(sp).note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join('\n') })); } }} />
       {!isEdit && <InfoFields format={format} value={info} onChange={setInfo} />}
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
       {(conf.length > 0 || hol) && <p className="oe-warn"><ConflictPills conf={conf} hol={hol} /></p>}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />
-      <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject}
+      <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />
+      <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject} hideFormations={invite.private}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
       <NotifyCheck value={notify} onChange={setNotify} />
       <h3 className="fsub">Participants ({attendees.length}{Number(max) ? `/${max}` : ''})</h3>
@@ -815,11 +839,12 @@ function PlacesFields({ max, setMax, min, setMin, maxLocked }) {
 }
 
 export function AudiencePill({ item }) {
-  if (!item?.audience?.length && !item?.subject) return null;
+  if (!item?.audience?.length && !item?.subject && !item?.private) return null;
   return (
     <div className="aud-row">
+      {item.private && <span className="pill priv"><Lock size={12} /> {privateLabel(item)}</span>}
       {item.subject && <span className="pill aud" style={{ '--c': SUBJECTS[item.subject]?.color }}>{SUBJECTS[item.subject]?.label}</span>}
-      {(item.audience || []).map((f) => <span key={f} className="pill aud" style={{ '--c': FORMATIONS[f]?.color }}>{FORMATIONS[f]?.label}</span>)}
+      {!item.private && (item.audience || []).map((f) => <span key={f} className="pill aud" style={{ '--c': FORMATIONS[f]?.color }}>{FORMATIONS[f]?.label}</span>)}
     </div>
   );
 }
@@ -837,10 +862,10 @@ export function ConflictPills({ conf, hol }) {
   );
 }
 
-function AudienceFields({ audience, setAudience, subject, setSubject, respectSchedule, setRespectSchedule }) {
+function AudienceFields({ audience, setAudience, subject, setSubject, respectSchedule, setRespectSchedule, hideFormations }) {
   return (
     <div className="aud-fields">
-      <div className="field"><span>Pour quelle formation ? <small className="muted">(rien de coché = toutes)</small></span>
+      {!hideFormations && <div className="field"><span>Pour quelle formation ? <small className="muted">(rien de coché = toutes)</small></span>
         <div className="chips">
           {Object.entries(FORMATIONS).map(([k, v]) => {
             const on = audience.includes(k);
@@ -850,7 +875,7 @@ function AudienceFields({ audience, setAudience, subject, setSubject, respectSch
             );
           })}
         </div>
-      </div>
+      </div>}
       <div className="field"><span>Matière à réviser <small className="muted">(facultatif)</small></span>
         <div className="chips">
           <button type="button" className={'chip' + (!subject ? ' on' : '')} onClick={() => setSubject('')}>Aucune en particulier</button>

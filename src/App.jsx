@@ -3,8 +3,13 @@ import {
   CalendarDays, CalendarHeart, CalendarRange, KeyRound, LogOut, Pencil, Share2, ShieldCheck, Sparkles, Users, Vote,
 } from 'lucide-react';
 import { isConfigured } from './firebase';
-import { checkInvite, log, ticketNewForUser, useConvs, usePolls, useParticipants, useSessions, useSettings, useTickets } from './data';
+import { checkInvite, log, syncSpotsFromSheet, ticketNewForUser, useCircles, useConvs, useSpots, usePolls, useParticipants, useSessions, useSettings, useTickets } from './data';
 import SupportPanel from './components/Support';
+import CirclesPanel from './components/Circles';
+import { setCirclesStore } from './privacy';
+import { canUseSpots, setSpotsStore } from './spots';
+import SpotsPanel from './components/Spots';
+import { flakySet } from './attendance';
 import ChatPanel, { ChatButton, ChatFab, useChatList } from './components/Chat';
 import { autoCleanup } from './cleanup';
 import { addDays, isoDate, ls, ss, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
@@ -48,6 +53,19 @@ function PublicApp() {
   const [people, peopleErr] = useParticipants();
   const polls = usePolls();
   const sessions = useSessions();
+  // Cercles : chargés une fois, partagés par toutes les vérifications « sur invitation »
+  const circles = useCircles();
+  useEffect(() => { setCirclesStore(circles); }, [circles]);
+  const spots = useSpots();
+  useEffect(() => { setSpotsStore(spots); }, [spots]);
+  // Synchro automatique avec le Google Sheet des spots (au plus toutes les 15 min, une fois par visite)
+  useEffect(() => {
+    if (!settings?.spotsSheet || !spots || ss.get('ge_sheet_sync')) return;
+    if (settings.spotsSyncAt && Date.now() - settings.spotsSyncAt < 15 * 60000) return;
+    ss.set('ge_sheet_sync', '1');
+    syncSpotsFromSheet(settings.spotsSheet, spots).catch(() => {});
+  }, [settings, spots]);
+  const [spotsOpen, setSpotsOpen] = useState(false);
   // Ménage automatique des vieilles séances / vieux sondages (1 fois par jour et par appareil)
   useEffect(() => { if (settings && polls && sessions) autoCleanup(polls, sessions, settings); }, [settings, polls, sessions]);
   const [theme, cycleTheme] = useTheme();
@@ -115,21 +133,21 @@ function PublicApp() {
   const catPeople = useMemo(() => (people || [])
     .filter((p) => (cat === 'all' || formationsOf(p).includes(cat)) && (sub === 'all' || subjectOk({ subject: sub }, p.subjects))), [people, cat, sub]);
   const filtered = useMemo(() => catPeople.filter((p) => matchFilters(p, filters)), [catPeople, filters]);
-  const seePolls = useMemo(() => (polls || []).filter((p) => canSee(p, me)), [polls, me]);
-  const seeSessions = useMemo(() => (sessions || []).filter((s) => canSee(s, me)), [sessions, me]);
+  const seePolls = useMemo(() => (polls || []).filter((p) => canSee(p, me)), [polls, me, circles]); // eslint-disable-line react-hooks/exhaustive-deps
+  const seeSessions = useMemo(() => (sessions || []).filter((s) => canSee(s, me)), [sessions, me, circles]); // eslint-disable-line react-hooks/exhaustive-deps
   const inView = (x) => (cat === 'all' || inAudience(x, cat)) && (sub === 'all' || !x.subject || x.subject === sub);
   const viewPolls = useMemo(() => seePolls.filter(inView), [seePolls, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
   const viewSessions = useMemo(() => seeSessions.filter(inView), [seeSessions, cat, sub]); // eslint-disable-line react-hooks/exhaustive-deps
   // Ouvre la cible du lien direct dès que la personne est connectée
   useEffect(() => {
-    if (!me || !goto || !polls || !sessions || (pendingSteps(me, settings).length && !promptDone)) return;
+    if (!me || !goto || !polls || !sessions || !circles || (pendingSteps(me, settings).length && !promptDone)) return;
     ss.del('ge_goto'); setGoto(null);
     window.history.replaceState(null, '', window.location.pathname);
     if (goto.type === 'poll') {
       const p = polls.find((x) => x.id === goto.id);
       setView('seances');
       if (!p) { setToast('Ce sondage n’existe plus.'); return; }
-      if (!canSee(p, me)) { setToast('Ce sondage ne concerne pas ta formation / tes matières.'); return; }
+      if (!canSee(p, me)) { setToast(p.private ? 'Ce sondage est privé (sur invitation).' : 'Ce sondage ne concerne pas ta formation / tes matières.'); return; }
       if (p.status === 'cancelled') setToast('Ce sondage a été annulé.');
       else if (p.status === 'closed') setToast('Ce sondage est terminé.');
       setTimeout(() => {
@@ -139,20 +157,23 @@ function PublicApp() {
     } else {
       const s = sessions.find((x) => x.id === goto.id);
       if (!s) { setToast('Cette séance n’existe plus.'); return; }
+      if (s.private && !canSee(s, me)) { setToast('Cette séance est privée (sur invitation).'); return; }
       setView('seances'); setSessionOpen(s);
     }
-  }, [me, goto, polls, sessions, promptDone]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [me, goto, polls, sessions, circles, promptDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Support (contacter l'admin) et assiduité
   const tickets = useTickets(me ? me.id : null);
   const supportNew = (tickets || []).filter(ticketNewForUser).length;
   const [support, setSupport] = useState(false);
+  const [circlesOpen, setCirclesOpen] = useState(false);
   useEffect(() => { const f = () => { setSupport(true); }; window.addEventListener('ge-support', f); return () => window.removeEventListener('ge-support', f); }, []);
   // Messagerie
   const convs = useConvs();
   const chatList = useChatList(convs, sessions, people, me);
   const [chat, setChat] = useState(null); // null = fermé, '' = liste, sinon id de conversation
   useEffect(() => { const f = (e) => { setSessionOpen(null); setChat(e.detail?.conv || ''); }; window.addEventListener('ge-chat', f); return () => window.removeEventListener('ge-chat', f); }, []);
+  const flaky = useMemo(() => flakySet(sessions), [sessions]);
   const pendingVotes = useMemo(() => (me ? seePolls.filter((p) => isOpenPoll(p) && !p.votes?.[me.id]).length : 0), [seePolls, me]);
 
   if (peopleErr) return <div className="center-screen"><p className="err">Erreur de connexion à la base : {peopleErr}</p></div>;
@@ -237,11 +258,12 @@ function PublicApp() {
             {menu && (
               <div className="dropdown" onMouseLeave={() => setMenu(false)}>
                 <div className="dd-head"><b>{me.prenom} {me.nom}</b>
-                  <span className="dd-code"><KeyRound size={14} /> Mon code perso : <b className="mono">{me.pin}</b></span>
+                  <span className="dd-code"><KeyRound size={14} /> Code perso : modifiable dans « Mes dispos »</span>
                 </div>
                 <button onClick={() => { setEditing(true); setMenu(false); }}><Pencil size={16} /> Modifier mes dispos</button>
                 <button onClick={() => { setPollForm({}); setMenu(false); }}><Vote size={16} /> Créer un sondage</button>
                 <button onClick={() => { share(); setMenu(false); }}><Share2 size={16} /> Partager le lien du site</button>
+                <button onClick={() => { setCirclesOpen(true); setMenu(false); }}>👥 Mes cercles</button>
                 <button onClick={() => { setSupport(true); setMenu(false); }}>🛟 Contacter l’admin{supportNew > 0 && <span className="dd-badge">{supportNew}</span>}</button>
                 <a className="dd-link" href="/admin"><ShieldCheck size={16} /> Espace admin</a>
                 <button className="dd-danger" onClick={logout}><LogOut size={16} /> Se déconnecter</button>
@@ -300,7 +322,7 @@ function PublicApp() {
         {view === 'jours' && <DayView people={filtered} sessions={viewSessions} settings={settings} weekStart={weekStart} setWeekStart={setWeekStart}
           highlight={highlight} setHighlight={setHighlight} meId={me.id} onSession={setSessionOpen} />}
         {view === 'creneaux' && <BestSlots people={filtered} settings={settings} onPoll={pollFromSlot} onPlan={planFromSlot} meId={me.id} />}
-        {view === 'seances' && <PollsView polls={viewPolls} sessions={viewSessions} people={people} me={me} isAdmin={false} settings={settings}
+        {view === 'seances' && <PollsView onSpots={canUseSpots(me, settings) ? () => setSpotsOpen(true) : null} flaky={flaky} polls={viewPolls} sessions={viewSessions} people={people} me={me} isAdmin={false} settings={settings}
           onSession={setSessionOpen} openPollForm={(p) => setPollForm({ initial: p })} openSessionForm={(s) => setSessionForm({ initial: s })} />}
         {view === 'gens' && <PeopleView people={filtered} meId={me.id} highlight={highlight} setHighlight={setHighlight} />}
       </main>
@@ -310,13 +332,15 @@ function PublicApp() {
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
       {cell && <CellSheet cell={cell} people={filtered} settings={settings} meId={me.id} onClose={() => setCell(null)}
         onPlan={(x) => { setCell(null); planFromSlot(x); }} />}
+      {spotsOpen && me && <SpotsPanel me={me} people={people} settings={settings} onClose={() => setSpotsOpen(false)} />}
+      {circlesOpen && me && <CirclesPanel me={me} people={people} onClose={() => setCirclesOpen(false)} />}
       {support && me && <SupportPanel me={me} tickets={tickets} onClose={() => setSupport(false)} />}
       {chat === null && <ChatFab list={chatList} onClick={() => setChat('')} />}
       {chat !== null && me && <ChatPanel initialConv={chat} list={chatList} people={people} me={me} onClose={() => setChat(null)} onSession={(s) => { setChat(null); setView('seances'); setSessionOpen(s); }} />}
       {sessionOpen && (() => {
         const live = sessions.find((s) => s.id === sessionOpen.id);
         if (!live) return null;
-        return <SessionSheet s={live} people={people} me={me} polls={polls || []} isAdmin={false} onClose={() => setSessionOpen(null)}
+        return <SessionSheet s={live} people={people} me={me} polls={polls || []} flaky={flaky} isAdmin={false} onClose={() => setSessionOpen(null)}
           onEdit={() => { setSessionForm({ initial: live }); setSessionOpen(null); }} />;
       })()}
       {pollForm && <PollForm initial={pollForm.initial} prefill={pollForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}

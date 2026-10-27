@@ -1,5 +1,6 @@
 // Formations DAEU, matières, emplois du temps et vacances
 import { isoDate, parseIso } from './utils';
+import { isInvited } from './privacy';
 
 export const FORMATIONS = {
   jour: { label: 'DAEU Jour', short: 'Jour', color: '#0EA5E9', hint: 'cours le mardi et le jeudi en journée' },
@@ -120,11 +121,12 @@ export function withoutCourses(p, settings, iso = null, d = null) {
 // audience = formations visées (vide = toutes) ; subject = matière visée (facultatif)
 export const inAudience = (item, formations) => !item?.audience?.length || [].concat(formations || []).some((f) => item.audience.includes(f));
 export const subjectOk = (item, subjects) => !item?.subject || !subjects?.length || subjects.includes(item.subject);
-export const personInAudience = (item, p) => inAudience(item, formationsOf(p)) && subjectOk(item, p.subjects);
+// Contenu sur invitation : seuls les invités (et le créateur) sont concernés
+export const personInAudience = (item, p) => (item?.private ? isInvited(item, p.id) : inAudience(item, formationsOf(p)) && subjectOk(item, p.subjects));
 
 // Ce que la personne voit : son public, ce qu'elle a créé, tout pour l'admin
 export const canSee = (item, me) => !me || me.id === 'admin' || item.createdBy === me.id
-  || ((!formationsOf(me).length || inAudience(item, formationsOf(me))) && subjectOk(item, me.subjects));
+  || (item.private ? isInvited(item, me.id) : (!formationsOf(me).length || inAudience(item, formationsOf(me))) && subjectOk(item, me.subjects));
 
 export const audienceLabel = (item) => {
   const f = !item?.audience?.length ? 'Toutes formations' : item.audience.map((x) => FORMATIONS[x]?.short || x).join(' + ');

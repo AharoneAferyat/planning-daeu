@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Eye, LifeBuoy, RotateCcw } from 'lucide-react';
-import { deleteTicket, replyTicket, seeTicket, setTicketStatus, TICKET_TYPES, ticketNewForAdmin } from '../data';
+import { deleteTicket, log, replyTicket, seeTicket, setTempPin, setTicketStatus, TEMP_PIN_DAYS, TICKET_TYPES, ticketNewForAdmin } from '../data';
+import { randomPin } from '../utils';
 import { TicketThread, TICKET_STATUS } from '../components/Support';
 import { startViewAs } from '../testmode';
 import { timeAgo } from '../utils';
@@ -12,6 +13,7 @@ const FILTERS = { todo: 'À traiter', answered: 'Répondu', closed: 'Résolu', a
 export default function AdminSupport({ tickets, people }) {
   const [filter, setFilter] = useState('todo');
   const [openId, setOpenId] = useState(null);
+  const [newCode, setNewCode] = useState('');
   const byId = Object.fromEntries((people || []).map((p) => [p.id, p]));
   const list = useMemo(() => (tickets || []).filter((t) => filter === 'all' || (filter === 'todo' ? t.status === 'open' : t.status === filter)), [tickets, filter]);
   const open = (tickets || []).find((t) => t.id === openId);
@@ -34,13 +36,16 @@ export default function AdminSupport({ tickets, people }) {
         {open.context && <p className="muted tiny tk-ctx">🔧 {open.context}</p>}
         {open.type === 'pin' ? (
           <div className="tk-pin">
-            <p>📞 <b>{open.phone}</b> {open.text && <span className="muted">— {open.text}</span>}</p>
-            {p ? <p>Son code perso : <b className="mono tk-code">{p.pin}</b></p> : <p className="muted">Participant introuvable (supprimé ?).</p>}
-            <div className="row-btns">
-              <a className="btn primary" href={`sms:${open.phone.replace(/\s/g, '')}${/iPhone|iPad|Mac/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(`Salut ${p?.prenom || ''} ! Ton code perso pour le site des groupes d’étude : ${p?.pin || '????'}`)}`}>💬 Envoyer le code par SMS</a>
-              <a className="btn ghost" href={`tel:${open.phone.replace(/\s/g, '')}`}>📞 Appeler</a>
-            </div>
-            <p className="muted tiny">Une fois le code renvoyé : « Marquer résolu », puis « Supprimer » pour effacer le numéro.</p>
+            <p>📞 <b>{open.phone || 'numéro effacé'}</b> {open.text && <span className="muted">— {open.text}</span>}</p>
+            {!p ? <p className="muted">Participant introuvable (supprimé ?).</p> : !newCode ? (
+              <>
+                <p className="muted tiny">Les codes sont chiffrés : personne ne peut les relire. Génère un code temporaire et donne-le-lui : à sa connexion, il devra choisir son nouveau code.</p>
+                <button className="btn primary" onClick={async () => { const c = randomPin(); await setTempPin(p.id, c); await log('participant_update', 'Admin', open.byName, { changes: [{ field: 'Code perso', from: '••••', to: 'code temporaire (code oublié)' }] }); setNewCode(c); }}>🔢 Générer un code temporaire</button>
+              </>
+            ) : (
+              <p>Code temporaire : <b className="mono tk-code">{newCode}</b><br /><small className="muted">Valable {TEMP_PIN_DAYS} jours, à usage unique : il devra choisir son code en se connectant.</small></p>
+            )}
+            <p className="muted tiny">« Marquer résolu » efface automatiquement le numéro de téléphone.</p>
           </div>
         ) : <TicketThread t={open} side="admin" onReply={(txt) => replyTicket(open, 'admin', txt, 'Admin')} />}
         <div className="row-btns">
@@ -65,7 +70,7 @@ export default function AdminSupport({ tickets, people }) {
       {!list.length ? <Empty icon={LifeBuoy} title={filter === 'todo' ? 'Rien à traiter 🎉' : 'Aucune demande'}>Les participants te contactent depuis leur menu ou la messagerie.</Empty> : (
         <div className="tk-list">
           {list.map((t) => (
-            <button key={t.id} className={'tk-item' + (ticketNewForAdmin(t) ? ' new' : '')} onClick={() => setOpenId(t.id)}>
+            <button key={t.id} className={'tk-item' + (ticketNewForAdmin(t) ? ' new' : '')} onClick={() => { setOpenId(t.id); setNewCode(''); }}>
               <span className="tk-emoji">{TICKET_TYPES[t.type]?.icon || '💬'}</span>
               <span className="grow">
                 <b>{t.byName}</b> <span className="muted tiny">· {timeAgo(t.lastAt)}</span>

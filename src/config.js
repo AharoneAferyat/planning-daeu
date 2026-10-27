@@ -7,6 +7,8 @@ export const DEFAULT_SETTINGS = {
   welcome: "Indique tes dispos de la semaine pour qu'on organise des groupes de travail ensemble.",
   requireCode: true,
   adminPinHash: null,
+  // Google Sheet des spots (partagé « tous les utilisateurs disposant du lien ») : le site s'y synchronise
+  spotsSheet: 'https://docs.google.com/spreadsheets/d/1v_M2PPDgV0mhI4f0dAT2vul_MwxXayli8r5zy4g5H74/edit?usp=sharing',
 };
 
 export const ADMIN_ME = { id: 'admin', prenom: 'Admin', nom: '' };

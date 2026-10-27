@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRightLeft, History, Pencil, Search, Trash2, UserPlus } from 'lucide-react';
 import { LOG_TYPES } from '../constants';
-import { deleteParticipant, mergeParticipants } from '../data';
-import { daysCount, duplicatePairs, fmtDate, fmtDur, normName, timeAgo, totalMinutes } from '../utils';
+import { deleteParticipant, log, mergeParticipants, setTempPin } from '../data';
+import { daysCount, duplicatePairs, fmtDate, fmtDur, normName, randomPin, timeAgo, totalMinutes } from '../utils';
 import DispoForm from '../components/DispoForm';
 import { Avatar, ConfirmButton, Modal, PersonBadges } from '../components/ui';
 
@@ -77,7 +77,7 @@ export default function AdminParticipants({ people, logs, polls, sessions, setti
                 </div>
               </div>
               <div className="meta-grid">
-                <span><em>Code perso (PIN)</em><b className="mono">{p.pin || '—'}</b></span>
+                <span><em>Code perso</em><NewPin p={p} /></span>
                 <span><em>Dispo</em>{daysCount(p)} j · {fmtDur(totalMinutes(p))}/sem</span>
                 <span><em>Inscrit</em>{fmtDate(p.createdAt, false)}{p.createdByAdmin ? ' (admin)' : ''}</span>
                 <span><em>Dernière modif</em>{timeAgo(p.updatedAt)} · {p.updates || 0} modif(s)</span>
@@ -113,7 +113,7 @@ function MergeModal({ a, b, onClose }) {
           <label key={p.id} className={'radio' + (keep === p.id ? ' on' : '')}>
             <input type="radio" checked={keep === p.id} onChange={() => setKeep(p.id)} />
             <Avatar p={p} size={28} />
-            <span className="grow"><b>{p.prenom} {p.nom}</b><br /><span className="muted tiny">maj {timeAgo(p.updatedAt)} · code {p.pin}</span></span>
+            <span className="grow"><b>{p.prenom} {p.nom}</b><br /><span className="muted tiny">maj {timeAgo(p.updatedAt)}</span></span>
           </label>
         ))}
       </div>
@@ -139,5 +139,16 @@ function HistoModal({ p, logs, onClose }) {
         </div>
       ))}
     </Modal>
+  );
+}
+
+// Code perso : chiffré, donc illisible. L'admin peut en générer un nouveau (affiché une seule fois).
+function NewPin({ p }) {
+  const [code, setCode] = useState('');
+  if (code) return <b className="mono">{code} <small className="muted">(temporaire, à transmettre)</small></b>;
+  return (
+    <span>{p.pinTemp ? '⏳ code temporaire en attente' : p.pinHash ? '🔒 chiffré' : p.pin ? '🔒 sera chiffré à sa prochaine connexion' : '—'}{' '}
+      <ConfirmButton className="link tiny" confirmText="Lui donner un code temporaire ?" onConfirm={async () => { const c = randomPin(); await setTempPin(p.id, c); await log('participant_update', 'Admin', `${p.prenom} ${p.nom}`, { changes: [{ field: 'Code perso', from: '••••', to: 'code temporaire (admin)' }] }); setCode(c); }}>Code temporaire</ConfirmButton>
+    </span>
   );
 }

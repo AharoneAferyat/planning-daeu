@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, CalendarHeart, KeyRound, Search, UserPlus } from 'lucide-react';
-import { checkInvite, consumeInvite, forgotPin, log, touchParticipant } from '../data';
-import { ls, normName } from '../utils';
+import { checkInvite, consumeInvite, forgotPin, log, setParticipantPin, touchParticipant } from '../data';
+import { checkPin, ls, normName } from '../utils';
 import { Avatar, Modal } from './ui';
 
 export function Brand({ title }) {
@@ -111,9 +111,17 @@ export function PinModal({ p, onClose, onOk }) {
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
   const [forgot, setForgot] = useState(false);
-  const check = (v) => {
+  const [mustChange, setMustChange] = useState(false);
+  const [np1, setNp1] = useState('');
+  const [np2, setNp2] = useState('');
+  const check = async (v) => {
     if (v.length < 4) return;
-    if (v === String(p.pin)) {
+    if (await checkPin(p, v)) {
+      // Code temporaire donné par l'admin : expiré, ou à remplacer tout de suite
+      if (p.pinTemp && p.pinTempUntil && Date.now() > p.pinTempUntil) { setErr('Ce code temporaire a expiré : redemande un code à l’admin.'); setPin(''); return; }
+      if (p.pinTemp) { setMustChange(true); return; }
+      // Ancien code encore en clair : on le remplace par son empreinte
+      if (!p.pinHash && p.pin != null) setParticipantPin(p.id, v).catch(() => {});
       ls.set('ge_pid', p.id);
       touchParticipant(p.id);
       log('participant_login', `${p.prenom} ${p.nom || ''}`.trim(), '', {});
@@ -125,6 +133,23 @@ export function PinModal({ p, onClose, onOk }) {
     }
   };
   if (forgot) return <ForgotPin p={p} onBack={() => setForgot(false)} onClose={onClose} />;
+  if (mustChange) {
+    return (
+      <Modal title="Choisis ton nouveau code">
+        <p className="muted">Tu t’es connecté(e) avec un <b>code temporaire</b>. Choisis maintenant ton code perso à 4 chiffres (garde-le bien !).</p>
+        <label className="field"><span>Nouveau code</span><PinInput value={np1} onChange={(v) => { setNp1(v); setErr(''); }} autoFocus /></label>
+        <label className="field"><span>Confirme-le</span><PinInput value={np2} onChange={(v) => { setNp2(v); setErr(''); }} /></label>
+        {err && <p className="err">{err}</p>}
+        <button className="btn primary wide-btn" disabled={np1.length < 4 || np2.length < 4} onClick={async () => {
+          if (np1 !== np2) { setErr('Les deux codes ne correspondent pas.'); return; }
+          await setParticipantPin(p.id, np1);
+          await log('participant_update', `${p.prenom} ${p.nom || ''}`.trim(), `${p.prenom} ${p.nom || ''}`.trim(), { changes: [{ field: 'Code perso', from: 'temporaire', to: 'nouveau code choisi' }] });
+          ls.set('ge_pid', p.id); touchParticipant(p.id);
+          onOk();
+        }}>Enregistrer et entrer</button>
+      </Modal>
+    );
+  }
   return (
     <Modal title={`Salut ${p.prenom} !`} onClose={onClose}>
       <p className="muted">Entre ton code perso à 4 chiffres.</p>
@@ -145,14 +170,14 @@ function ForgotPin({ p, onBack, onClose }) {
   if (done) {
     return (
       <Modal title="C’est envoyé 👍" onClose={onClose} footer={<button className="btn primary grow" onClick={onClose}>OK</button>}>
-        <p>L’admin a reçu ta demande et va te recontacter au <b>{phone}</b> pour te redonner ton code.</p>
+        <p>L’admin a reçu ta demande et va te recontacter au <b>{phone}</b> avec un code temporaire.</p>
       </Modal>
     );
   }
   return (
     <Modal title="Code oublié" onClose={onClose}
       footer={<><button className="btn ghost" onClick={onBack}>Retour</button><button className="btn primary grow" disabled={!ok || busy} onClick={async () => { setBusy(true); await forgotPin(p, phone, note); setBusy(false); setDone(true); }}>Envoyer à l’admin</button></>}>
-      <p className="muted">Pas de souci : laisse ton numéro, l’admin te renverra ton code.</p>
+      <p className="muted">Pas de souci : laisse ton numéro, l’admin te recontactera avec un <b>code temporaire</b>. À ta connexion, tu choisiras ton nouveau code.</p>
       <label className="field"><span>Nom</span><input value={`${p.prenom} ${p.nom || ''}`.trim()} disabled /></label>
       <label className="field"><span>Ton numéro de téléphone *</span><input type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" autoFocus /></label>
       <label className="field"><span>Un mot (facultatif)</span><input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="Ex : plutôt par SMS" /></label>

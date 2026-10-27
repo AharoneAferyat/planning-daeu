@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { UserX } from 'lucide-react';
-import { reliabilityStats } from '../attendance';
+import { FLAKY_MIN, isFlaky, reliabilityStats } from '../attendance';
 import { fmtDayShort } from '../utils';
 import { Avatar, Empty } from '../components/ui';
 
@@ -15,7 +15,7 @@ export default function AdminAttendance({ people, sessions }) {
   return (
     <div className="card">
       <h4 className="card-title"><UserX size={18} /> Fiabilité</h4>
-      <p className="muted tiny">« Pas venu » = noté par le créateur de la séance. « Désistement tardif » = désinscrit moins de 24 h avant. Les autres désinscriptions ne comptent pas.</p>
+      <p className="muted tiny">« Pas venu » = noté par le créateur de la séance. « Désistement tardif » = désinscrit moins de 24 h avant. Les autres désinscriptions ne comptent pas. <b>⚠️ ATTENTION</b> = plus de 90 % de lâchages à partir de {FLAKY_MIN} séances (visible par les créateurs de séance).</p>
       {!flaky.length ? <Empty icon={UserX} title="Personne ne lâche 👏">Rien à signaler pour l’instant.</Empty> : (
         <div className="att-table">
           {flaky.map((r) => {
@@ -25,7 +25,7 @@ export default function AdminAttendance({ people, sessions }) {
                 <button className="att-person-head" onClick={() => setOpen(open === r.id ? null : r.id)}>
                   <Avatar p={p} size={30} />
                   <span className="grow">
-                    <b>{p.prenom} {p.nom}</b>
+                    <b>{p.prenom} {p.nom}{isFlaky(r) && <span className="flaky">⚠️ ATTENTION</span>}</b>
                     <span className="muted tiny">{r.noShow ? `❌ ${r.noShow} pas venu${r.noShow > 1 ? 's' : ''}` : ''}{r.noShow && r.lateLeaves ? ' · ' : ''}{r.lateLeaves ? `⚠️ ${r.lateLeaves} désistement${r.lateLeaves > 1 ? 's' : ''} tardif${r.lateLeaves > 1 ? 's' : ''}` : ''} · sur {r.total + r.lateLeaves} séance{r.total + r.lateLeaves > 1 ? 's' : ''}</span>
                   </span>
                   <span className="att-score"><b>{r.rate !== null ? `${r.rate} %` : '—'}</b><small className="muted">fiable</small></span>

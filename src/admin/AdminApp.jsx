@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { setCirclesStore } from '../privacy';
+import { setSpotsStore } from '../spots';
 import {
   ArrowLeft, CalendarCheck, FlaskConical, History, KeyRound, LayoutDashboard, LifeBuoy, LogOut, Settings, ShieldCheck, Ticket, UserCheck, Users,
 } from 'lucide-react';
 import { DEFAULT_ADMIN_PIN } from '../config';
-import { log, ticketNewForAdmin, useInvites, useLogs, useParticipants, usePolls, useSessions, useSettings, useTickets } from '../data';
+import { exportBackup, log, ticketNewForAdmin, useCircles, useSpots, useInvites, useLogs, useParticipants, usePolls, useSessions, useSettings, useTickets } from '../data';
 import AdminSupport from './AdminSupport';
 import AdminAttendance from './AdminAttendance';
 import { hashPin, ss } from '../utils';
@@ -68,12 +70,17 @@ function AdminLogin({ settings, onOk }) {
 
 function AdminShell({ settings, theme, cycleTheme, onLogout }) {
   const [tab, setTab] = useState(() => ss.get('ge_admin_tab') || 'dash');
+  const [exporting, setExporting] = useState(false);
   const [people] = useParticipants();
   const invites = useInvites();
   const polls = usePolls();
   const sessions = useSessions();
   const logs = useLogs(600);
   const tickets = useTickets();
+  const circles = useCircles();
+  const spots = useSpots();
+  useEffect(() => { setCirclesStore(circles); }, [circles]);
+  useEffect(() => { setSpotsStore(spots); }, [spots]);
   const go = (k) => { setTab(k); ss.set('ge_admin_tab', k); window.scrollTo(0, 0); };
   if (!people || !invites || !polls || !sessions || !logs) return <Spinner />;
   const data = { settings, people, invites, polls, sessions, logs, go, tickets };
@@ -91,6 +98,12 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
       </header>
       {!settings.adminPinHash && (
         <div className="banner warn">Tu utilises encore le PIN admin par défaut. <button className="link" onClick={() => go('settings')}>Le changer</button></div>
+      )}
+      {(!settings.lastExportAt || Date.now() - settings.lastExportAt > 7 * 86400000) && (
+        <div className="banner backup">
+          💾 <b>Sauvegarde de la semaine</b> · {settings.lastExportAt ? `dernière il y a ${Math.floor((Date.now() - settings.lastExportAt) / 86400000)} jours` : 'jamais faite'}
+          <button className="btn small primary" disabled={exporting} onClick={async () => { setExporting(true); try { await exportBackup(); } finally { setExporting(false); } }}>{exporting ? 'Export…' : 'Exporter maintenant'}</button>
+        </div>
       )}
       <nav className="tabs admin-tabs">
         {TABS.map((t) => (

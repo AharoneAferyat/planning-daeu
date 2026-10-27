@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { AlertTriangle, Brush, Download, KeyRound, Save } from 'lucide-react';
 import { cleanupMonths, cleanupOn, oldItems, runCleanup } from '../cleanup';
 import { DAYS_SHORT, DISTANCES, FORMATS } from '../constants';
-import { fetchAll, log, saveSettings, wipeCollection } from '../data';
+import { exportBackup, log, saveSettings, wipeCollection } from '../data';
 import { download, fmt, fmtDate, hashPin, momentsLabel, totalMinutes, fmtDur } from '../utils';
 import { ConfirmButton, Toast } from '../components/ui';
 import ScheduleEditor from './ScheduleEditor';
+import { PeoplePick } from '../components/Circles';
 import { formationsLabel } from '../formations';
 
 export default function AdminSettings({ settings, people, polls, sessions }) {
@@ -37,19 +38,15 @@ export default function AdminSettings({ settings, people, polls, sessions }) {
     setPin1(''); setPin2(''); setToast('PIN admin modifié');
   };
 
-  const exportJson = async () => {
-    const all = {};
-    for (const c of ['participants', 'invites', 'polls', 'sessions', 'logs', 'convs', 'messages', 'tickets']) all[c] = await fetchAll(c);
-    download(`sauvegarde-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(all, null, 2), 'application/json');
-  };
+  const exportJson = async () => { await exportBackup(); setToast('Sauvegarde téléchargée'); };
 
   const exportCsv = () => {
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Prénom', 'Nom', 'Formation', 'Matières', 'Code perso', 'Fréquence', 'Moment', 'Format', 'Déplacement', 'Heures/sem', ...DAYS_SHORT, 'Note', 'Inscrit le', 'Modifié le', 'Via code'];
+    const head = ['Prénom', 'Nom', 'Formation', 'Matières', 'Fréquence', 'Moment', 'Format', 'Déplacement', 'Heures/sem', ...DAYS_SHORT, 'Note', 'Inscrit le', 'Modifié le', 'Via code'];
     const rows = [head.join(';')];
     for (const p of people) {
       const days = DAYS_SHORT.map((_, d) => (p.slots || []).filter((s) => s.d === d).map((s) => `${fmt(s.s)}-${fmt(s.e)}`).join(' '));
-      rows.push([p.prenom, p.nom, formationsLabel(p, false), (p.subjects || []).join(', ') || 'toutes', p.pin, p.freq, momentsLabel(p), FORMATS[p.format]?.short,
+      rows.push([p.prenom, p.nom, formationsLabel(p, false), (p.subjects || []).join(', ') || 'toutes', p.freq, momentsLabel(p), FORMATS[p.format]?.short,
         p.format === 'visio' ? '' : DISTANCES[p.distance]?.label, fmtDur(totalMinutes(p)), ...days, p.note,
         fmtDate(p.createdAt), fmtDate(p.updatedAt), p.viaCode].map(esc).join(';'));
     }
@@ -77,6 +74,15 @@ export default function AdminSettings({ settings, people, polls, sessions }) {
         <button className="btn primary" onClick={saveGeneral}><Save size={16} /> Enregistrer</button>
       </div>
 
+      <div className="card">
+        <h4 className="card-title">📍 Spots : qui peut les utiliser</h4>
+        <p className="muted tiny">Ces personnes voient le bouton « Spots » et peuvent choisir un spot dans un sondage ou une séance (les infos importantes se remplissent alors toutes seules). Les autres voient seulement le lieu choisi.</p>
+        <PeoplePick people={people} value={settings.spotPickers || []} onChange={(v) => saveSettings({ spotPickers: v }, { spots: `${v.length} personne(s)` }).then(() => setToast('Réglage enregistré'))} />
+        <label className="field"><span>Lien du Google Sheet des spots</span>
+          <input defaultValue={settings.spotsSheet || ''} onBlur={(e) => { if (e.target.value !== (settings.spotsSheet || '')) saveSettings({ spotsSheet: e.target.value.trim() }, { googleSheet: 'modifié' }).then(() => setToast('Lien enregistré')); }} placeholder="https://docs.google.com/spreadsheets/d/…" />
+          <small className="muted">Partagé « Tous les utilisateurs disposant du lien » (lecture suffit). Le site se synchronise tout seul toutes les 15 min environ.</small>
+        </label>
+      </div>
       <div className="card">
         <h4 className="card-title"><Brush size={17} /> Ménage automatique</h4>
         <label className="switch">

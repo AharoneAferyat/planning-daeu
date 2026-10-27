@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Copy, Plus, Trash2, UserCheck } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, MOMENTS, PALETTE, PRESETS } from '../constants';
-import { createParticipant, deleteParticipant, log, updateParticipant } from '../data';
+import { createParticipant, deleteParticipant, log, pinData, updateParticipant } from '../data';
 import { capName, diffParticipant, momentsOf, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
 import { Chips, ConfirmButton, FormatIcon, MOMENT_ICON, Modal } from './ui';
 import { PinInput } from './AccessScreens';
@@ -16,7 +16,8 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
   const usedColors = people.map((p) => p.color);
   const [prenom, setPrenom] = useState(existing?.prenom || '');
   const [nom, setNom] = useState(existing?.nom || '');
-  const [pin, setPin] = useState(existing?.pin || '');
+  const [pin, setPin] = useState(existing?.pinHash ? '' : (existing?.pin || ''));
+  const hasPin = !!existing?.pinHash; // code déjà enregistré (chiffré) : champ vide = inchangé
   const [formations, setFormations] = useState(() => formationsOf(existing));
   const [subjects, setSubjects] = useState(existing?.subjects || []);
   const [presSubjects, setPresSubjects] = useState(existing?.presSubjects);
@@ -50,7 +51,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
     if (!P || !N) return setErr('Prénom et nom sont obligatoires.');
     if (exact) return setErr(`${exact.p.prenom} ${exact.p.nom} existe déjà.`);
     if (needsConfirm) return setErr('Un nom ressemble au tien : confirme que tu es une autre personne.');
-    if (!/^\d{4}$/.test(String(pin))) return setErr('Le code perso doit faire 4 chiffres.');
+    if (!(hasPin && !pin) && !/^\d{4}$/.test(String(pin))) return setErr('Le code perso doit faire 4 chiffres.');
     if (!formations.length) return setErr('Indique ta ou tes formations DAEU (Jour, Soir, Hybride).');
     const slots = [];
     for (let d = 0; d < 7; d++) {
@@ -64,19 +65,20 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
     }
     if (!slots.length) return setErr('Ajoute au moins un créneau de dispo.');
     const data = {
-      prenom: P, nom: N, nameKey: nameKey(P, N), pin: String(pin), formations, formation: formations[0], subjects, ...(isHybridCombo({ formations }) ? { presSubjects: Array.isArray(presSubjects) ? presSubjects : presCourseSubjects({ formations, subjects }, settings) } : {}), color, freq, moments, moment: null, format,
+      prenom: P, nom: N, nameKey: nameKey(P, N), formations, formation: formations[0], subjects, ...(isHybridCombo({ formations }) ? { presSubjects: Array.isArray(presSubjects) ? presSubjects : presCourseSubjects({ formations, subjects }, settings) } : {}), color, freq, moments, moment: null, format,
       distance: format === 'visio' ? null : distance, note: note.trim().slice(0, 200), slots: normalizeSlots(slots),
     };
     setBusy(true);
     try {
       const actor = admin ? 'Admin' : `${P} ${N}`;
       if (isNew) {
-        const id = await createParticipant({ ...data, viaCode: viaCode || null, createdByAdmin: !!admin });
+        const id = await createParticipant({ ...data, ...(await pinData(pin, true)), viaCode: viaCode || null, createdByAdmin: !!admin });
         await log('participant_create', actor, `${P} ${N}`, { créneaux: data.slots.length, code: viaCode || null });
         onSaved(id);
       } else {
         const changes = diffParticipant(existing, data);
-        await updateParticipant(existing.id, data);
+        await updateParticipant(existing.id, { ...data, ...(pin ? await pinData(pin) : {}) });
+        if (pin && (hasPin || String(pin) !== String(existing.pin))) changes.push({ field: 'Code perso', from: '••••', to: '•••• (modifié)' });
         if (changes.length) await log('participant_update', actor, `${P} ${N}`, { changes });
         onSaved(existing.id);
       }
@@ -155,6 +157,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
 
         <label className="field narrow"><span>Code perso (4 chiffres) *</span>
           <PinInput value={pin} onChange={setPin} />
+          {hasPin && <small className="muted">Laisse vide pour garder ton code actuel.</small>}
           <small className="muted">Tu l'inventes. Il te servira à te reconnecter sur un autre appareil : note-le !</small>
         </label>
 

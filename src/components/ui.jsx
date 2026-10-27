@@ -56,7 +56,7 @@ export function AvatarStack({ people, max = 6, size = 26, onClick, label }) {
 }
 
 // Liste de personnes groupées (Oui / Si besoin / …)
-export function PeopleGroups({ groups, meId }) {
+export function PeopleGroups({ groups, meId, warn }) {
   return (
     <div className="pgroups">
       {groups.filter((g) => g.people.length || g.showEmpty).map((g) => (
@@ -72,6 +72,7 @@ export function PeopleGroups({ groups, meId }) {
                     <Name p={p} meId={meId} full />
                     {g.extra && <div className="muted tiny">{g.extra(p)}</div>}
                   </div>
+                  {warn?.has(p.id) && <span className="flaky" title="A lâché plus de 90 % des séances où il/elle était inscrit(e)">⚠️ ATTENTION</span>}
                   <PersonBadges p={p} compact />
                 </div>
               ))}
@@ -83,12 +84,12 @@ export function PeopleGroups({ groups, meId }) {
   );
 }
 
-export function PeopleModal({ title, subtitle, groups, meId, onClose, footer, after }) {
+export function PeopleModal({ title, subtitle, groups, meId, onClose, footer, after, warn }) {
   return (
     <Modal title={title} onClose={onClose} footer={footer}>
       {subtitle && <p className="muted modal-sub">{subtitle}</p>}
       {after && <div className="pm-after">{after}</div>}
-      <PeopleGroups groups={groups} meId={meId} />
+      <PeopleGroups groups={groups} meId={meId} warn={warn} />
     </Modal>
   );
 }

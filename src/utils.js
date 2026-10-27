@@ -188,7 +188,6 @@ const FIELDS = {
   formations: 'Formations',
   subjects: 'Matières',
   presSubjects: 'Cours en présentiel',
-  pin: 'Code perso',
   color: 'Couleur',
   freq: 'Fréquence',
   moments: 'Moments préférés',
@@ -300,3 +299,15 @@ export function download(filename, content, type = 'text/plain') {
   a.href = url; a.download = filename; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// Codes perso : jamais stockés en clair (empreinte SHA-256 + sel propre à chaque personne)
+export const newSalt = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
+export async function pinDigest(pin, salt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`ge-pin:${salt}:${pin}`));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+export async function checkPin(p, v) {
+  if (p.pinHash && p.pinSalt) return (await pinDigest(v, p.pinSalt)) === p.pinHash;
+  return p.pin != null && String(p.pin) === String(v);
+}
+export const randomPin = () => String(Math.floor(Math.random() * 10000)).padStart(4, '0');

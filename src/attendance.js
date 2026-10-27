@@ -37,3 +37,9 @@ export function reliabilityStats(sessions) {
   }
   return st;
 }
+
+// « Attention » : a lâché plus de 90 % des séances, à partir de 5 séances
+export const FLAKY_MIN = 5;
+export const FLAKY_RATE = 0.9;
+export const isFlaky = (r) => !!r && r.total + r.lateLeaves >= FLAKY_MIN && r.flakes / (r.total + r.lateLeaves) > FLAKY_RATE;
+export const flakySet = (sessions) => new Set(Object.values(reliabilityStats(sessions)).filter(isFlaky).map((r) => r.id));

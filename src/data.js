@@ -5,7 +5,7 @@ import {
 } from './fs';
 import { db } from './firebase';
 import { DEFAULT_SETTINGS } from './config';
-import { fmt, fmtDayShort, shortUA, toDate, normalizeSlots } from './utils';
+import { fmt, fmtDayShort, newSalt, normalizeSlots, pinDigest, shortUA, toDate } from './utils';
 import { splitPlaces, yesByMode, yesOrder } from './places';
 import { inTestMode, TEST_ID } from './testmode';
 
@@ -249,7 +249,7 @@ export async function closePoll(poll, option, extra, actor) {
     format, modes, place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
     ...(extra.infoData || {}),
-    attendees, waitlist, maybes, max, min, audience: poll.audience || [], subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
+    attendees, waitlist, maybes, max, min, spotId: extra.spotId ?? poll.spotId ?? null, audience: poll.audience || [], private: !!poll.private, invite: poll.invite || null, subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp() });
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
@@ -533,7 +533,8 @@ export async function replyTicket(t, from, text, actor) {
   if (from === 'admin') await log('ticket_reply', 'Admin', t.byName, { réponse: text.trim().slice(0, 200) });
 }
 export async function setTicketStatus(t, status) {
-  await updateDoc(doc(db, 'tickets', t.id), { status, lastAt: Date.now() });
+  // Résolu : le numéro de téléphone laissé (code oublié) est effacé
+  await updateDoc(doc(db, 'tickets', t.id), { status, lastAt: Date.now(), ...(status === 'closed' && t.phone ? { phone: deleteField() } : {}) });
   await log('ticket_status', 'Admin', t.byName, { statut: status });
 }
 export const seeTicket = (t, side) => updateDoc(doc(db, 'tickets', t.id), side === 'admin' ? { adminSeen: Date.now() } : { userSeen: Date.now() });
@@ -557,4 +558,107 @@ export async function forgotPin(p, phone, note) {
 export async function deleteTicket(t) {
   await deleteDoc(doc(db, 'tickets', t.id));
   await log('ticket_status', 'Admin', t.byName, { statut: 'supprimée' });
+}
+
+// Code perso : on enregistre l'empreinte et on efface l'ancien code en clair
+export async function pinData(pin, forCreate = false) {
+  const salt = newSalt();
+  const hash = await pinDigest(String(pin), salt);
+  return forCreate ? { pinHash: hash, pinSalt: salt } : { pinHash: hash, pinSalt: salt, pin: deleteField() };
+}
+export async function setParticipantPin(id, pin) {
+  await updateDoc(doc(db, 'participants', id), { ...(await pinData(pin)), pinTemp: deleteField(), pinTempUntil: deleteField() });
+}
+// Code temporaire (donné par l'admin) : valable 7 jours, à remplacer dès la connexion
+export const TEMP_PIN_DAYS = 7;
+export async function setTempPin(id, pin) {
+  await updateDoc(doc(db, 'participants', id), { ...(await pinData(pin)), pinTemp: true, pinTempUntil: Date.now() + TEMP_PIN_DAYS * 86400000 });
+}
+
+// ---------- Sauvegarde complète (JSON) ----------
+export const BACKUP_COLLECTIONS = ['participants', 'invites', 'polls', 'sessions', 'logs', 'convs', 'messages', 'tickets', 'circles', 'spots'];
+export async function exportBackup() {
+  const all = {};
+  for (const c of BACKUP_COLLECTIONS) all[c] = await fetchAll(c);
+  const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `sauvegarde-groupes-etude-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  await setDoc(doc(db, 'config', 'settings'), { lastExportAt: Date.now() }, { merge: true });
+}
+
+// ---------- Cercles ----------
+export const useCircles = () => useCol('circles', (d) => ({ id: d.id, ...d.data() }), (a, b) => (a.name || '').localeCompare(b.name || '', 'fr'));
+export async function saveCircle(c, me) {
+  const data = { name: c.name.trim().slice(0, 40), members: [...new Set(c.members || [])], updatedAt: serverTimestamp() };
+  if (c.id) await updateDoc(doc(db, 'circles', c.id), data);
+  else await addDoc(collection(db, 'circles'), { ...data, createdBy: me.id, createdByName: fullName(me), createdAt: serverTimestamp() });
+  await log(c.id ? 'circle_update' : 'circle_create', fullName(me), data.name, { membres: data.members.length });
+}
+export async function deleteCircle(c, actor) {
+  await deleteDoc(doc(db, 'circles', c.id));
+  await log('circle_delete', actor, c.name, {});
+}
+
+// ---------- Spots ----------
+export const useSpots = () => useCol('spots', (d) => ({ id: d.id, ...d.data() }), (a, b) => (a.name || '').localeCompare(b.name || '', 'fr'));
+const spotClean = (s) => ({
+  name: String(s.name || '').trim().slice(0, 80), type: s.type || '', address: (s.address || '').trim(), maps: (s.maps || '').trim(),
+  hours: s.hours || {}, closed: s.closed || '', closedHolidays: !!s.closedHolidays, wifi: !!s.wifi, plugs: !!s.plugs,
+  ambiance: s.ambiance || '', conditions: s.conditions || '', capacity: Number(s.capacity) || null, booking: !!s.booking,
+  price: s.price || '', notes: (s.notes || '').trim().slice(0, 500), private: !!s.private, invite: s.private ? (s.invite || { ids: [], circles: [] }) : null,
+});
+export async function saveSpot(s, me) {
+  const data = { ...spotClean(s), updatedAt: serverTimestamp() };
+  if (s.id) await updateDoc(doc(db, 'spots', s.id), data);
+  else await addDoc(collection(db, 'spots'), { ...data, createdBy: me.id, createdByName: me.id === 'admin' ? 'Admin' : fullName(me), createdAt: serverTimestamp() });
+  await log(s.id ? 'spot_update' : 'spot_create', me.id === 'admin' ? 'Admin' : fullName(me), data.name, {});
+}
+export async function deleteSpot(s, actor) {
+  await deleteDoc(doc(db, 'spots', s.id));
+  await log('spot_delete', actor, s.name, {});
+}
+// Import : un spot de même nom est mis à jour, les autres sont ajoutés
+export async function importSpots(rows, existing, me) {
+  let added = 0, updated = 0;
+  const byName = Object.fromEntries((existing || []).map((s) => [s.name.trim().toLowerCase(), s]));
+  for (const r of rows) {
+    const cur = byName[r.name.trim().toLowerCase()];
+    const data = { ...spotClean({ ...r, invite: cur?.invite }), updatedAt: serverTimestamp() };
+    if (cur) { await updateDoc(doc(db, 'spots', cur.id), data); updated++; }
+    else { await addDoc(collection(db, 'spots'), { ...data, createdBy: me.id, createdByName: me.id === 'admin' ? 'Admin' : fullName(me), createdAt: serverTimestamp() }); added++; }
+  }
+  await log('spot_import', me.id === 'admin' ? 'Admin' : fullName(me), `${added} ajouté(s), ${updated} mis à jour`, {});
+  return { added, updated };
+}
+
+// Synchronisation avec le Google Sheet des spots : ajoute / met à jour / retire les spots venant du tableau.
+// Les spots ajoutés sur le site ne sont jamais touchés. N'écrit que ce qui a changé.
+export async function syncSpotsFromSheet(url, existing) {
+  const { sheetCsvUrl, spotsFromCsv, sheetKey } = await import('./spots');
+  const csvUrl = sheetCsvUrl(url);
+  if (!csvUrl) throw new Error('Lien Google Sheet invalide.');
+  const res = await fetch(csvUrl);
+  if (!res.ok) throw new Error('Google Sheet inaccessible : vérifie qu’il est partagé « Tous les utilisateurs disposant du lien ».');
+  const rows = spotsFromCsv(await res.text());
+  const fromSheet = (existing || []).filter((s) => s.fromSheet);
+  const byId = Object.fromEntries(fromSheet.map((s) => [s.id, s]));
+  let added = 0, updated = 0, removed = 0;
+  const seen = new Set();
+  for (const r of rows) {
+    const id = sheetKey(r.name);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const cur = byId[id];
+    const data = { ...spotClean({ ...r, private: r.private, invite: cur?.invite }), fromSheet: true };
+    const same = cur && JSON.stringify(spotClean(cur)) === JSON.stringify(spotClean(data));
+    if (same) continue;
+    await setDoc(doc(db, 'spots', id), { ...data, createdBy: 'sheet', createdByName: 'Google Sheet', updatedAt: serverTimestamp() }, { merge: true });
+    if (cur) updated++; else added++;
+  }
+  for (const s of fromSheet) if (!seen.has(s.id)) { await deleteDoc(doc(db, 'spots', s.id)); removed++; }
+  await setDoc(doc(db, 'config', 'settings'), { spotsSyncAt: Date.now() }, { merge: true });
+  if (added || updated || removed) await log('spot_import', 'Google Sheet', `${added} ajouté(s), ${updated} mis à jour, ${removed} retiré(s)`, {});
+  return { added, updated, removed, total: rows.length };
 }

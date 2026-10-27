@@ -3,7 +3,8 @@ import {
   CalendarDays, CalendarHeart, CalendarRange, KeyRound, LogOut, Pencil, Share2, ShieldCheck, Sparkles, Users, Vote,
 } from 'lucide-react';
 import { isConfigured } from './firebase';
-import { checkInvite, log, useConvs, usePolls, useParticipants, useSessions, useSettings } from './data';
+import { checkInvite, log, ticketNewForUser, useConvs, usePolls, useParticipants, useSessions, useSettings, useTickets } from './data';
+import SupportPanel from './components/Support';
 import ChatPanel, { ChatButton, ChatFab, useChatList } from './components/Chat';
 import { autoCleanup } from './cleanup';
 import { addDays, isoDate, ls, ss, matchFilters, nextDateForWeekday, parseIso, uid, weekStartOf } from './utils';
@@ -142,6 +143,11 @@ function PublicApp() {
     }
   }, [me, goto, polls, sessions, promptDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Support (contacter l'admin) et assiduité
+  const tickets = useTickets(me ? me.id : null);
+  const supportNew = (tickets || []).filter(ticketNewForUser).length;
+  const [support, setSupport] = useState(false);
+  useEffect(() => { const f = () => { setSupport(true); }; window.addEventListener('ge-support', f); return () => window.removeEventListener('ge-support', f); }, []);
   // Messagerie
   const convs = useConvs();
   const chatList = useChatList(convs, sessions, people, me);
@@ -227,7 +233,7 @@ function PublicApp() {
           <button className="icon-btn hide-xs" onClick={share} title="Partager le lien"><Share2 size={20} /></button>
           <ThemeButton mode={theme} cycle={cycleTheme} />
           <div className="me-menu">
-            <button className="me-btn" onClick={() => setMenu(!menu)} aria-label="Mon compte"><Avatar p={me} size={34} ring /></button>
+            <button className="me-btn" onClick={() => setMenu(!menu)} aria-label="Mon compte"><Avatar p={me} size={34} ring />{supportNew > 0 && <i className="me-dot" />}</button>
             {menu && (
               <div className="dropdown" onMouseLeave={() => setMenu(false)}>
                 <div className="dd-head"><b>{me.prenom} {me.nom}</b>
@@ -236,6 +242,7 @@ function PublicApp() {
                 <button onClick={() => { setEditing(true); setMenu(false); }}><Pencil size={16} /> Modifier mes dispos</button>
                 <button onClick={() => { setPollForm({}); setMenu(false); }}><Vote size={16} /> Créer un sondage</button>
                 <button onClick={() => { share(); setMenu(false); }}><Share2 size={16} /> Partager le lien du site</button>
+                <button onClick={() => { setSupport(true); setMenu(false); }}>🛟 Contacter l’admin{supportNew > 0 && <span className="dd-badge">{supportNew}</span>}</button>
                 <a className="dd-link" href="/admin"><ShieldCheck size={16} /> Espace admin</a>
                 <button className="dd-danger" onClick={logout}><LogOut size={16} /> Se déconnecter</button>
               </div>
@@ -281,7 +288,7 @@ function PublicApp() {
           <span><b>{viewPolls.filter(isOpenPoll).length}</b> sondage(s) en cours</span>
         </div>
 
-        <AlertsBar unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
+        <AlertsBar supportNew={supportNew} onSupport={() => setSupport(true)} unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />
 
         {view !== 'seances' && (
           <Filters filters={filters} setFilters={setFilters} people={filtered} highlight={highlight} setHighlight={setHighlight} />
@@ -303,6 +310,7 @@ function PublicApp() {
         onSaved={(id, deleted) => { setEditing(false); if (deleted) { ls.del('ge_pid'); setPid(null); } else setToast('Dispos mises à jour ✓'); }} />}
       {cell && <CellSheet cell={cell} people={filtered} settings={settings} meId={me.id} onClose={() => setCell(null)}
         onPlan={(x) => { setCell(null); planFromSlot(x); }} />}
+      {support && me && <SupportPanel me={me} tickets={tickets} onClose={() => setSupport(false)} />}
       {chat === null && <ChatFab list={chatList} onClick={() => setChat('')} />}
       {chat !== null && me && <ChatPanel initialConv={chat} list={chatList} people={people} me={me} onClose={() => setChat(null)} onSession={(s) => { setChat(null); setView('seances'); setSessionOpen(s); }} />}
       {sessionOpen && (() => {
@@ -317,7 +325,7 @@ function PublicApp() {
         onClose={() => setSessionForm(null)} />}
       {pendingSteps(me, settings).length > 0 && !promptDone ? (
         <ProfileUpdate me={me} settings={settings} onDone={(patch) => { setPromptDone(true); const f = patch.formations; if (f?.length === 1) setCat(f[0]); setToast('C’est noté, merci !'); }} />
-      ) : <AlertsPopup skip={deepLinked} unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
+      ) : <AlertsPopup skip={deepLinked} supportNew={supportNew} onSupport={() => setSupport(true)} unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
       <Toast text={toast} onDone={clearToast} />
     </div>
   );

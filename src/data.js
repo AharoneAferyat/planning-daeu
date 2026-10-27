@@ -320,6 +320,8 @@ export async function joinSession(s, me, join, opts = {}) {
     const presCount = () => att.filter((id) => id !== me.id && counts(id)).length;
     const wasCounted = att.includes(me.id) && counts(me.id);
     let st;
+    let lateLeave = 0;
+    let anyLeave = 0;
     if (join) {
       const mode = hybrid ? (opts.mode || 'presentiel') : 'presentiel';
       if (mode === 'visio') {
@@ -338,12 +340,17 @@ export async function joinSession(s, me, join, opts = {}) {
         st = att.includes(me.id) ? 'visio_wait' : 'wait';
       }
     } else {
+      const wasIn = att.includes(me.id);
       att = att.filter((x) => x !== me.id);
       wait = wait.filter((x) => x !== me.id);
       delete modes[me.id];
       st = wasCounted && max && wait.length ? 'freed' : 'out';
+      // Désistement de dernière minute (moins de 24 h avant le début) : gardé pour les stats d'assiduité
+      const startAt = new Date(`${d.date}T00:00:00`).getTime() + (d.s || 0) * 60000;
+      if (wasIn && startAt - Date.now() < 86400000) lateLeave = Date.now();
+      if (wasIn) anyLeave = Date.now();
     }
-    tx.update(ref, { attendees: att, waitlist: wait, modes });
+    tx.update(ref, { attendees: att, waitlist: wait, modes, ...(lateLeave ? { [`lateLeaves.${me.id}`]: lateLeave } : {}), ...(anyLeave ? { [`leaves.${me.id}`]: anyLeave } : {}) });
     return st;
   });
   if (status === 'cancelled') return status;
@@ -487,4 +494,67 @@ export async function togglePin(m, me) {
   await updateDoc(doc(db, 'messages', m.id), m.pinned
     ? { pinned: deleteField(), pinnedBy: deleteField(), pinnedAt: deleteField() }
     : { pinned: true, pinnedBy: `${me.prenom} ${me.nom || ''}`.trim(), pinnedAt: Date.now() });
+}
+
+// ---------- Support : contacter l'admin ----------
+// tickets/{id} : { by, byName, type, text, status: 'open' | 'answered' | 'closed', at, lastAt, replies: [{ from: 'admin' | 'user', text, at }], context }
+export const TICKET_TYPES = {
+  bug: { label: 'Un bug', icon: '🐞', hint: 'Quelque chose ne marche pas ou s’affiche mal' },
+  question: { label: 'Une question', icon: '❓', hint: 'Tu ne sais pas comment faire quelque chose' },
+  idea: { label: 'Une idée', icon: '💡', hint: 'Une amélioration pour le site' },
+  people: { label: 'Un souci avec quelqu’un', icon: '🤝', hint: 'Reste confidentiel : seul l’admin le lit' },
+  account: { label: 'Mon compte', icon: '🔑', hint: 'Doublon, changer de nom…' },
+  pin: { label: 'Code oublié', icon: '🔢', hint: '', hidden: true },
+};
+// byId : seulement les demandes de cette personne (côté participant) ; sans : toutes (côté admin)
+export function useTickets(byId) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    if (byId === null) return undefined;
+    const ref = byId ? query(collection(db, 'tickets'), where('by', '==', byId)) : collection(db, 'tickets');
+    return onSnapshot(ref, (snap) => setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => !byId || t.by === byId).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0))), () => setRows([]));
+  }, [byId]);
+  return rows;
+}
+// Demande avec du nouveau pour l'un ou l'autre côté
+export const ticketNewForUser = (t) => t.status !== 'closed' && (t.replies || []).some((r) => r.from === 'admin' && r.at > (t.userSeen || 0));
+export const ticketNewForAdmin = (t) => t.status !== 'closed' && (t.at > (t.adminSeen || 0) || (t.replies || []).some((r) => r.from === 'user' && r.at > (t.adminSeen || 0)));
+export async function createTicket(me, type, text, context) {
+  const at = Date.now();
+  await addDoc(collection(db, 'tickets'), { by: me.id, byName: fullName(me), type, text: text.trim().slice(0, 2000), status: 'open', at, lastAt: at, replies: [], context: context || '', userSeen: at });
+  await log('ticket_create', fullName(me), TICKET_TYPES[type]?.label || type, { message: text.trim().slice(0, 200) });
+}
+export async function replyTicket(t, from, text, actor) {
+  const at = Date.now();
+  await updateDoc(doc(db, 'tickets', t.id), {
+    replies: arrayUnion({ from, text: text.trim().slice(0, 2000), at }), lastAt: at,
+    status: from === 'admin' ? 'answered' : 'open', ...(from === 'admin' ? { adminSeen: at } : { userSeen: at }),
+  });
+  if (from === 'admin') await log('ticket_reply', 'Admin', t.byName, { réponse: text.trim().slice(0, 200) });
+}
+export async function setTicketStatus(t, status) {
+  await updateDoc(doc(db, 'tickets', t.id), { status, lastAt: Date.now() });
+  await log('ticket_status', 'Admin', t.byName, { statut: status });
+}
+export const seeTicket = (t, side) => updateDoc(doc(db, 'tickets', t.id), side === 'admin' ? { adminSeen: Date.now() } : { userSeen: Date.now() });
+
+// ---------- Présences ----------
+// session.attendance = { id: 'present' | 'late' | 'excused' | 'absent' } (rempli par l'organisateur / l'admin)
+// session.checkins   = { id: timestamp }  (« Je suis là » pendant la séance)
+// session.lateLeaves = { id: timestamp }  (désinscription moins de 24 h avant)
+// « Pas venu » : noté par le créateur (ou l'admin) après la séance — session.attendance = { id: 'absent' }
+export async function saveNoShows(s, ids, actor, names) {
+  await updateDoc(doc(db, 'sessions', s.id), { attendance: Object.fromEntries(ids.map((id) => [id, 'absent'])), attendanceAt: Date.now(), attendanceBy: actor });
+  await log('session_attendance', actor, s.title, { 'pas venus': names.join(', ') || 'personne' });
+}
+// Code oublié : la personne (pas encore connectée) laisse son numéro pour que l'admin lui renvoie son code
+export async function forgotPin(p, phone, note) {
+  const at = Date.now();
+  const name = `${p.prenom} ${p.nom || ''}`.trim();
+  await addDoc(collection(db, 'tickets'), { by: p.id, byName: name, type: 'pin', phone: phone.trim().slice(0, 30), text: note?.trim() ? note.trim().slice(0, 500) : 'J’ai oublié mon code perso.', status: 'open', at, lastAt: at, replies: [] });
+  await log('ticket_create', name, 'Code oublié', { téléphone: 'laissé' });
+}
+export async function deleteTicket(t) {
+  await deleteDoc(doc(db, 'tickets', t.id));
+  await log('ticket_status', 'Admin', t.byName, { statut: 'supprimée' });
 }

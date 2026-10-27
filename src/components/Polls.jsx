@@ -16,6 +16,7 @@ import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
 import { isSessionMember, openChat, SessionChatBlock } from './Chat';
+import { CreatorAttendance } from './Attendance';
 import { sessionConvId } from '../data';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personCoursesAt, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
@@ -570,6 +571,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
       {!st.cancelled && <SessionInfoBlock s={s} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
+      <CreatorAttendance s={s} people={people} me={me} canManage={canManage} />
       <SessionChatBlock s={s} me={me} canManage={canManage} concerned={st.status !== 'out' || iMaybe} />
       {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}. Elle reste affichée (barrée) dans le planning pour prévenir les inscrits.</p>}
       {canManage && (

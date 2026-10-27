@@ -27,7 +27,7 @@ function Bars({ title, rows }) {
   );
 }
 
-export default function AdminDashboard({ people, invites, polls, sessions, logs, go }) {
+export default function AdminDashboard({ people, invites, polls, sessions, logs, go, tickets }) {
   const week = Date.now() - 7 * 86400000;
   const changes7 = logs.filter((l) => (toDate(l.at)?.getTime() || 0) > week && l.type.startsWith('participant_')).length;
   const activeCodes = invites.filter((i) => inviteStatus(i).key === 'ok').length;
@@ -52,6 +52,9 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
         <div className="kpi"><Clock size={20} /><b>{fmtDur(Math.round(avgH))}</b><span>dispo moy. / sem</span></div>
       </div>
 
+      {(tickets || []).filter((t) => t.status === 'open').length > 0 && (
+        <div className="alert warn clickable" onClick={() => go('support')}>🛟 <div><b>{(tickets || []).filter((t) => t.status === 'open').length} demande(s) à traiter</b> dans Support.</div></div>
+      )}
       {decisionsFor(sessions, 'admin').map((s) => <DecisionCard key={s.id} s={s} me={ADMIN_ME} onOpen={() => go('sessions')} />)}
 
       {dups.length > 0 && (

@@ -231,6 +231,7 @@ function useAlerts(sessions, polls, me) {
   const toConfirm = useMemo(() => (sessions || []).filter((s) => !isPast(s.date, s.e) && isMaybe(s, polls, me.id)), [sessions, polls, me.id]);
   const reminders = all.filter((s) => !freedFor(s, me.id) && !toConfirm.includes(s));
   const decisions = useMemo(() => decisionsFor(sessions, me.id), [sessions, me.id]);
+
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
   const votedPolls = openPolls.filter((p) => p.votes?.[me.id]);
   return { infos, anns, cancelled, cancelledPolls, freed, toConfirm, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
@@ -253,7 +254,7 @@ function PollRow({ p, total, onGo, onHide }) {
 
 // ---------- Fenêtre affichée à l'arrivée sur le site ----------
 // skip : arrivée par un lien direct → on ne masque pas la cible avec la fenêtre (le bandeau reste)
-export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls, skip, unread = 0 }) {
+export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls, skip, unread = 0, supportNew = 0, onSupport }) {
   const a = useAlerts(sessions, polls, me);
   const total = people.length;
   const remKey = 'ge_rem_seen_' + [...a.toConfirm.map((s) => 'm' + s.id), ...a.decisions.map((s) => 'd' + s.id + (s.attendees || []).length), ...a.freed.map((s) => s.id + ':libre'), ...a.reminders.map((s) => s.id)].join(',');
@@ -261,7 +262,7 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
 
   useEffect(() => {
     if (skip) return;
-    if (a.infos.length || a.anns.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
+    if (supportNew || a.infos.length || a.anns.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
     const showRem = (a.freed.length || a.toConfirm.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
     const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     const showChat = unread > 0 && ss.get('ge_chat_seen') !== '1';
@@ -281,6 +282,11 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
         {a.pendingPolls.length > 0 && <button className="btn ghost" onClick={() => { ss.set('ge_polls_later', '1'); ss.set(remKey, '1'); setOpen(false); }}>Plus tard</button>}
         <button className="btn primary grow" onClick={close}>OK</button>
       </>}>
+      {supportNew > 0 && (
+        <button className="al-summary al-support" onClick={() => { close(); onSupport?.(); }}>
+          🛟 L’admin t’a répondu <ChevronRight size={15} />
+        </button>
+      )}
       {a.infos.length > 0 && (
         <Section title="Infos importantes" cls="prio">
           {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={openS} />)}
@@ -312,6 +318,7 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
           {a.decisions.map((s) => <DecisionCard key={s.id} s={s} me={me} onOpen={openS} />)}
         </Section>
       )}
+
       {a.reminders.length > 0 && (
         <Section title={soon ? (a.reminders.length > 1 ? 'Séances des 3 prochains jours' : 'Séance à venir') : 'Prochaine séance'}>
           {a.reminders.map((s) => <SessionLine key={s.id} s={s} people={people} me={me} onOpen={openS} compact />)}
@@ -337,13 +344,18 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
 }
 
 // ---------- Bandeaux permanents en haut du planning (même ordre de priorité) ----------
-export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, unread = 0 }) {
+export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, unread = 0, supportNew = 0, onSupport }) {
   const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
   const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
-  if (!a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
+  if (!supportNew && !a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
   return (
     <div className="al-bar">
+      {supportNew > 0 && (
+        <button className="al-card al-c-support" onClick={onSupport}>
+          <span className="al-ico">🛟</span><span className="grow"><b>L’admin t’a répondu</b></span><span className="al-go">Lire <ChevronRight size={16} /></span>
+        </button>
+      )}
       {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
       {a.anns.map((s) => <AnnounceCard key={s.id} s={s} onOpen={onSession} />)}
       {unread > 0 && (

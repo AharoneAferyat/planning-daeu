@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, CalendarHeart, KeyRound, Search, UserPlus } from 'lucide-react';
-import { checkInvite, consumeInvite, log, touchParticipant } from '../data';
+import { checkInvite, consumeInvite, forgotPin, log, touchParticipant } from '../data';
 import { ls, normName } from '../utils';
 import { Avatar, Modal } from './ui';
 
@@ -110,6 +110,7 @@ export function Identity({ settings, people, onLogin, onNew }) {
 export function PinModal({ p, onClose, onOk }) {
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
+  const [forgot, setForgot] = useState(false);
   const check = (v) => {
     if (v.length < 4) return;
     if (v === String(p.pin)) {
@@ -118,16 +119,44 @@ export function PinModal({ p, onClose, onOk }) {
       log('participant_login', `${p.prenom} ${p.nom || ''}`.trim(), '', {});
       onOk();
     } else {
-      setErr('Code incorrect. En cas d’oubli, demande à l’admin.');
+      setErr('Code incorrect.');
       setPin('');
       log('participant_login_fail', `${p.prenom} ${p.nom || ''}`.trim(), '', {});
     }
   };
+  if (forgot) return <ForgotPin p={p} onBack={() => setForgot(false)} onClose={onClose} />;
   return (
     <Modal title={`Salut ${p.prenom} !`} onClose={onClose}>
       <p className="muted">Entre ton code perso à 4 chiffres.</p>
       <PinInput value={pin} onChange={(v) => { setPin(v); setErr(''); check(v); }} autoFocus />
       {err && <p className="err">{err}</p>}
+      <button className="link tiny forgot-link" onClick={() => setForgot(true)}>Code oublié ?</button>
+    </Modal>
+  );
+}
+
+// Code oublié : on laisse son numéro, l'admin renvoie le code
+function ForgotPin({ p, onBack, onClose }) {
+  const [phone, setPhone] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const ok = phone.replace(/\D/g, '').length >= 8;
+  if (done) {
+    return (
+      <Modal title="C’est envoyé 👍" onClose={onClose} footer={<button className="btn primary grow" onClick={onClose}>OK</button>}>
+        <p>L’admin a reçu ta demande et va te recontacter au <b>{phone}</b> pour te redonner ton code.</p>
+      </Modal>
+    );
+  }
+  return (
+    <Modal title="Code oublié" onClose={onClose}
+      footer={<><button className="btn ghost" onClick={onBack}>Retour</button><button className="btn primary grow" disabled={!ok || busy} onClick={async () => { setBusy(true); await forgotPin(p, phone, note); setBusy(false); setDone(true); }}>Envoyer à l’admin</button></>}>
+      <p className="muted">Pas de souci : laisse ton numéro, l’admin te renverra ton code.</p>
+      <label className="field"><span>Nom</span><input value={`${p.prenom} ${p.nom || ''}`.trim()} disabled /></label>
+      <label className="field"><span>Ton numéro de téléphone *</span><input type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="06 12 34 56 78" autoFocus /></label>
+      <label className="field"><span>Un mot (facultatif)</span><input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="Ex : plutôt par SMS" /></label>
+      <p className="muted tiny">Ton numéro n’est visible que par l’admin, et il peut être supprimé une fois le code renvoyé.</p>
     </Modal>
   );
 }

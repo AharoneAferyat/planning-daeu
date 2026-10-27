@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import {
-  ArrowLeft, CalendarCheck, FlaskConical, History, KeyRound, LayoutDashboard, LogOut, Settings, ShieldCheck, Ticket, Users,
+  ArrowLeft, CalendarCheck, FlaskConical, History, KeyRound, LayoutDashboard, LifeBuoy, LogOut, Settings, ShieldCheck, Ticket, UserCheck, Users,
 } from 'lucide-react';
 import { DEFAULT_ADMIN_PIN } from '../config';
-import { log, useInvites, useLogs, useParticipants, usePolls, useSessions, useSettings } from '../data';
+import { log, ticketNewForAdmin, useInvites, useLogs, useParticipants, usePolls, useSessions, useSettings, useTickets } from '../data';
+import AdminSupport from './AdminSupport';
+import AdminAttendance from './AdminAttendance';
 import { hashPin, ss } from '../utils';
 import useTheme from '../useTheme';
 import ThemeButton from '../components/ThemeButton';
@@ -21,6 +23,8 @@ const TABS = [
   { key: 'people', label: 'Participants', icon: Users },
   { key: 'codes', label: 'Codes d’accès', icon: Ticket },
   { key: 'sessions', label: 'Séances & sondages', icon: CalendarCheck },
+  { key: 'support', label: 'Support', icon: LifeBuoy },
+  { key: 'attendance', label: 'Fiabilité', icon: UserCheck },
   { key: 'logs', label: 'Historique', icon: History },
   { key: 'test', label: 'Mode test', icon: FlaskConical },
   { key: 'settings', label: 'Réglages', icon: Settings },
@@ -69,9 +73,11 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
   const polls = usePolls();
   const sessions = useSessions();
   const logs = useLogs(600);
+  const tickets = useTickets();
   const go = (k) => { setTab(k); ss.set('ge_admin_tab', k); window.scrollTo(0, 0); };
   if (!people || !invites || !polls || !sessions || !logs) return <Spinner />;
-  const data = { settings, people, invites, polls, sessions, logs, go };
+  const data = { settings, people, invites, polls, sessions, logs, go, tickets };
+  const supportNew = (tickets || []).filter(ticketNewForAdmin).length;
 
   return (
     <div className="app admin">
@@ -89,7 +95,7 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
       <nav className="tabs admin-tabs">
         {TABS.map((t) => (
           <button key={t.key} className={'tab' + (tab === t.key ? ' on' : '')} onClick={() => go(t.key)}>
-            <t.icon size={18} /><span>{t.label}</span>
+            <t.icon size={18} /><span>{t.label}</span>{t.key === 'support' && supportNew > 0 && <span className="tab-badge">{supportNew}</span>}
           </button>
         ))}
       </nav>
@@ -98,6 +104,8 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
         {tab === 'people' && <AdminParticipants {...data} />}
         {tab === 'codes' && <AdminInvites {...data} />}
         {tab === 'sessions' && <AdminSessions {...data} />}
+        {tab === 'support' && <AdminSupport {...data} />}
+        {tab === 'attendance' && <AdminAttendance {...data} />}
         {tab === 'logs' && <AdminLogs {...data} />}
         {tab === 'test' && <AdminTest {...data} />}
         {tab === 'settings' && <AdminSettings {...data} />}

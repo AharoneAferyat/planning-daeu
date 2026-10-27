@@ -75,8 +75,8 @@ export default function AdminSettings({ settings, people, polls, sessions }) {
       </div>
 
       <div className="card">
-        <h4 className="card-title">📍 Spots : qui peut les utiliser</h4>
-        <p className="muted tiny">Ces personnes voient le bouton « Spots » et peuvent choisir un spot dans un sondage ou une séance (les infos importantes se remplissent alors toutes seules). Les autres voient seulement le lieu choisi.</p>
+        <h4 className="card-title">📍 Accès avancé : spots, cercles, invitations</h4>
+        <p className="muted tiny">Ces personnes ont en plus : le bouton « Spots » et le choix d’un spot dans un sondage ou une séance (infos importantes pré-remplies), « Mes cercles », et l’option « Qui peut voir : sur invitation ». Pour les autres, les sondages et séances se créent exactement comme avant.</p>
         <PeoplePick people={people} value={settings.spotPickers || []} onChange={(v) => saveSettings({ spotPickers: v }, { spots: `${v.length} personne(s)` }).then(() => setToast('Réglage enregistré'))} />
         <label className="field"><span>Lien du Google Sheet des spots</span>
           <input defaultValue={settings.spotsSheet || ''} onBlur={(e) => { if (e.target.value !== (settings.spotsSheet || '')) saveSettings({ spotsSheet: e.target.value.trim() }, { googleSheet: 'modifié' }).then(() => setToast('Lien enregistré')); }} placeholder="https://docs.google.com/spreadsheets/d/…" />

@@ -263,7 +263,7 @@ function PublicApp() {
                 <button onClick={() => { setEditing(true); setMenu(false); }}><Pencil size={16} /> Modifier mes dispos</button>
                 <button onClick={() => { setPollForm({}); setMenu(false); }}><Vote size={16} /> Créer un sondage</button>
                 <button onClick={() => { share(); setMenu(false); }}><Share2 size={16} /> Partager le lien du site</button>
-                <button onClick={() => { setCirclesOpen(true); setMenu(false); }}>👥 Mes cercles</button>
+                {canUseSpots(me, settings) && <button onClick={() => { setCirclesOpen(true); setMenu(false); }}>👥 Mes cercles</button>}
                 <button onClick={() => { setSupport(true); setMenu(false); }}>🛟 Contacter l’admin{supportNew > 0 && <span className="dd-badge">{supportNew}</span>}</button>
                 <a className="dd-link" href="/admin"><ShieldCheck size={16} /> Espace admin</a>
                 <button className="dd-danger" onClick={logout}><LogOut size={16} /> Se déconnecter</button>

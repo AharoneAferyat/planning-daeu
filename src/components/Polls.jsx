@@ -17,7 +17,7 @@ import WaButton, { SharedDone } from './WaButton';
 import PollComments from './PollComments';
 import { InvitePicker } from './Circles';
 import { SpotPickField, spotPlace } from './Spots';
-import { spotInfo } from '../spots';
+import { canUseSpots, spotInfo } from '../spots';
 import { canSeeSpot, conditionsOf, mapsLink, spotStatus, useSpotsStore } from '../spots';
 import { invitedIds, privateLabel } from '../privacy';
 import { isSessionMember, openChat, SessionChatBlock } from './Chat';
@@ -495,7 +495,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
       )}
       <SpotPickField me={me} settings={settings} slots={options.map((o) => ({ date: o.date, s: toMin(o.sh), e: toMin(o.eh) }))} value={spotId} onPick={(sp) => { setSpotId(sp?.id || null); if (sp) setPlace(sp.name); }} />
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} />
-      <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />
+      {(canUseSpots(me, settings) || invite.private) && <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />}
       <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject} hideFormations={invite.private}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
 
@@ -785,7 +785,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
       {(conf.length > 0 || hol) && <p className="oe-warn"><ConflictPills conf={conf} hol={hol} /></p>}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />
-      <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />
+      {(canUseSpots(me, settings) || invite.private) && <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />}
       <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject} hideFormations={invite.private}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
       <NotifyCheck value={notify} onChange={setNotify} />

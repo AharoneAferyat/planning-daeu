@@ -136,7 +136,7 @@ export const sheetId = (url) => (String(url || '').match(/\/spreadsheets\/d\/([a
 export const sheetCsvUrl = (url) => { const id = sheetId(url); return id ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&headers=1&sheet=Spots` : null; };
 export const sheetKey = (name) => `gs_${normName(name).slice(0, 60) || 'spot'}`;
 
-// Qui peut utiliser les spots (choisir un spot, ouvrir la liste) : l'admin + les personnes autorisées dans Réglages
+// Accès avancé (spots, cercles, sondages / séances sur invitation) : l'admin + les personnes autorisées dans Réglages
 export const canUseSpots = (me, settings) => !!me && (me.id === 'admin' || (settings?.spotPickers || []).includes(me.id));
 // Infos importantes pré-remplies à partir d'un spot
 export function spotInfo(sp) {

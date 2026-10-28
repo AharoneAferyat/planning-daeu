@@ -1255,3 +1255,4 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .spot-tag.sheet { background: color-mix(in srgb, #16A34A 14%, var(--surface)); color: #15803D; font-weight: 700; }
 .spin { animation: spin 1s linear infinite; }
 .spot-sheet > .grow { flex: 1 1 100%; }
+.chip.on.ca-exc { --c: #0284C7; } .ca-done { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }

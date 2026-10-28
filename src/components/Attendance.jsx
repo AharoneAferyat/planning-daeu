@@ -9,18 +9,21 @@ const fmtBefore = (ms) => {
   return ms <= 0 ? 'après le début' : h < 1 ? 'moins d’1 h avant' : h < 48 ? `${h} h avant` : `${Math.round(h / 24)} j avant`;
 };
 
-// Pour le créateur (et l'admin) : qui s'est désinscrit, et après la séance « qui n'est pas venu ? »
+// Pour le créateur (et l'admin) : qui s'est désinscrit, et après la séance qui était absent (excusé ou non)
+const NEXT = { undefined: 'absent', absent: 'excused', excused: undefined };
 export function CreatorAttendance({ s, people, me, canManage }) {
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const leaves = leavesOf(s);
   const over = isOver(s);
   const [edit, setEdit] = useState(false);
-  const [sel, setSel] = useState(() => Object.keys(s.attendance || {}).filter((id) => s.attendance[id] === 'absent'));
+  const [sel, setSel] = useState(() => ({ ...(s.attendance || {}) }));
   const [busy, setBusy] = useState(false);
   if (!canManage || s.cancelled) return null;
-  const noShows = Object.keys(s.attendance || {}).filter((id) => s.attendance[id] === 'absent').map((id) => byId[id]).filter(Boolean);
+  const who = (k) => Object.keys(s.attendance || {}).filter((id) => s.attendance[id] === k).map((id) => byId[id]?.prenom).filter(Boolean);
   const start = new Date(`${s.date}T00:00:00`).getTime() + s.s * 60000;
   if (!leaves.length && !over) return null;
+  const nA = Object.values(sel).filter((v) => v === 'absent').length;
+  const nE = Object.values(sel).filter((v) => v === 'excused').length;
 
   return (
     <div className="ca-box">
@@ -39,22 +42,29 @@ export function CreatorAttendance({ s, people, me, canManage }) {
         <>
           <b className="ca-title"><UserX size={15} /> Qui n’est pas venu ?</b>
           {!edit && s.attendanceAt ? (
-            <p className="ca-done">{noShows.length ? <>Pas venu{noShows.length > 1 ? 's' : ''} : <b>{noShows.map((p) => p.prenom).join(', ')}</b></> : 'Tout le monde est venu 👍'} <button className="link tiny" onClick={() => setEdit(true)}>Modifier</button></p>
+            <p className="ca-done">
+              {!who('absent').length && !who('excused').length ? 'Tout le monde est venu 👍' : <>
+                {who('absent').length > 0 && <span>❌ Absent{who('absent').length > 1 ? 's' : ''} : <b>{who('absent').join(', ')}</b></span>}
+                {who('excused').length > 0 && <span>🙋 Excusé{who('excused').length > 1 ? 's' : ''} : <b>{who('excused').join(', ')}</b></span>}
+              </>}
+              <button className="link tiny" onClick={() => setEdit(true)}>Modifier</button>
+            </p>
           ) : (
             <>
-              <p className="muted tiny">Touche les inscrits qui ne sont pas venus (facultatif).</p>
+              <p className="muted tiny">Touche un prénom : 1 fois = ❌ absent, 2 fois = 🙋 absent excusé (avait prévenu), 3 fois = présent. Facultatif.</p>
               <div className="ca-chips">
                 {(s.attendees || []).map((id) => byId[id]).filter(Boolean).map((p) => (
-                  <button key={p.id} className={'chip small' + (sel.includes(p.id) ? ' on ca-no' : '')} onClick={() => setSel((x) => (x.includes(p.id) ? x.filter((y) => y !== p.id) : [...x, p.id]))}>
-                    {sel.includes(p.id) ? '❌ ' : ''}{p.prenom}
+                  <button key={p.id} className={'chip small' + (sel[p.id] === 'absent' ? ' on ca-no' : sel[p.id] === 'excused' ? ' on ca-exc' : '')}
+                    onClick={() => setSel((x) => { const n = { ...x }; const v = NEXT[x[p.id]]; if (v) n[p.id] = v; else delete n[p.id]; return n; })}>
+                    {sel[p.id] === 'absent' ? '❌ ' : sel[p.id] === 'excused' ? '🙋 ' : ''}{p.prenom}
                   </button>
                 ))}
               </div>
               <button className="btn small" disabled={busy} onClick={async () => {
                 setBusy(true);
-                await saveNoShows(s, sel, me.id === 'admin' ? 'Admin' : `${me.prenom} ${me.nom || ''}`.trim(), sel.map((id) => byId[id]?.prenom).filter(Boolean));
+                await saveNoShows(s, sel, me.id === 'admin' ? 'Admin' : `${me.prenom} ${me.nom || ''}`.trim(), (id) => byId[id]?.prenom || '?');
                 setBusy(false); setEdit(false);
-              }}>{sel.length ? `Enregistrer (${sel.length} pas venu${sel.length > 1 ? 's' : ''})` : 'Tout le monde est venu'}</button>
+              }}>{nA + nE ? `Enregistrer (${[nA && `${nA} absent${nA > 1 ? 's' : ''}`, nE && `${nE} excusé${nE > 1 ? 's' : ''}`].filter(Boolean).join(', ')})` : 'Tout le monde est venu'}</button>
             </>
           )}
         </>

@@ -543,10 +543,11 @@ export const seeTicket = (t, side) => updateDoc(doc(db, 'tickets', t.id), side =
 // session.attendance = { id: 'present' | 'late' | 'excused' | 'absent' } (rempli par l'organisateur / l'admin)
 // session.checkins   = { id: timestamp }  (« Je suis là » pendant la séance)
 // session.lateLeaves = { id: timestamp }  (désinscription moins de 24 h avant)
-// « Pas venu » : noté par le créateur (ou l'admin) après la séance — session.attendance = { id: 'absent' }
-export async function saveNoShows(s, ids, actor, names) {
-  await updateDoc(doc(db, 'sessions', s.id), { attendance: Object.fromEntries(ids.map((id) => [id, 'absent'])), attendanceAt: Date.now(), attendanceBy: actor });
-  await log('session_attendance', actor, s.title, { 'pas venus': names.join(', ') || 'personne' });
+// Absences notées par le créateur (ou l'admin) après la séance — session.attendance = { id: 'absent' | 'excused' }
+export async function saveNoShows(s, map, actor, nameOf) {
+  await updateDoc(doc(db, 'sessions', s.id), { attendance: map, attendanceAt: Date.now(), attendanceBy: actor });
+  const list = (k) => Object.keys(map).filter((id) => map[id] === k).map(nameOf).join(', ') || 'personne';
+  await log('session_attendance', actor, s.title, { absents: list('absent'), excusés: list('excused') });
 }
 // Code oublié : la personne (pas encore connectée) laisse son numéro pour que l'admin lui renvoie son code
 export async function forgotPin(p, phone, note) {

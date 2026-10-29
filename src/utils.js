@@ -17,7 +17,7 @@ export const toMin = (hhmm) => {
 };
 export const toHHMM = (m) => (m >= 1440 ? '23:59' : `${pad(Math.floor(m / 60))}:${pad(m % 60)}`);
 export const fmt = (m) => {
-  if (m >= 1440) return '24h';
+  if (m >= 1440 || m === 0) return '00h';
   const h = Math.floor(m / 60), mm = m % 60;
   return mm ? `${h}h${pad(mm)}` : `${h}h`;
 };

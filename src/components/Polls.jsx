@@ -21,7 +21,7 @@ import { canUseSpots, spotInfo } from '../spots';
 import { canSeeSpot, conditionsOf, mapsLink, spotStatus, useSpotsStore } from '../spots';
 import { invitedIds, privateLabel } from '../privacy';
 import { isSessionMember, openChat, SessionChatBlock } from './Chat';
-import { CreatorAttendance } from './Attendance';
+import { CreatorAttendance, ReminderBox } from './Attendance';
 import { sessionConvId } from '../data';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personCoursesAt, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
@@ -590,6 +590,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
       {!st.cancelled && <SessionInfoBlock s={s} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
+      <ReminderBox s={s} canManage={canManage} highlight={s.date <= isoDate(new Date(Date.now() + 86400000))} />
       <CreatorAttendance s={s} people={people} me={me} canManage={canManage} />
       <SessionChatBlock s={s} me={me} canManage={canManage} concerned={st.status !== 'out' || iMaybe} />
       {st.cancelled && <p className="alert danger-alert"><b>Séance annulée</b>{s.cancelledBy ? ` par ${s.cancelledBy}` : ''}. Elle reste affichée (barrée) dans le planning pour prévenir les inscrits.</p>}

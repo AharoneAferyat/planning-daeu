@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, CalendarCheck, Check, ChevronRight, Clock, EyeOff, MapPin, Megaphone, MessageCircle, Vote, X } from 'lucide-react';
+import { Bell, CalendarCheck, Check, ChevronRight, Clock, EyeOff, LifeBuoy, MapPin, Megaphone, MessageCircle, Vote, X } from 'lucide-react';
 import { ackAnnounce, announcesFor, openChat } from './Chat';
+import { markReminderSent, reminderSent } from './Attendance';
+import WaButton from './WaButton';
+import { reminderMessage, shareWhatsApp } from '../share';
 import { answerMaybe, cancelSession, joinSession, keepSession } from '../data';
 import { addDays, fmt, fmtDay, fmtDayShort, isPast, isoDate, ls, ss } from '../utils';
 import { AvatarStack, Modal } from './ui';
@@ -230,6 +233,9 @@ function useAlerts(sessions, polls, me) {
     ...(polls || []).filter((p) => p.private && isOpenPoll(p) && p.createdBy !== me.id && !invSeen.includes(p.id)).map((p) => ({ kind: 'poll', item: p })),
     ...(sessions || []).filter((s) => s.private && !s.cancelled && !isPast(s.date, s.e) && s.createdBy !== me.id && !invSeen.includes(s.id)).map((s) => ({ kind: 'session', item: s })),
   ];
+  // Organisateur : le jour J, envoyer le rappel sur WhatsApp
+  const todayIso = isoDate(new Date());
+  const remindToday = (sessions || []).filter((s) => s.createdBy === me.id && s.date === todayIso && !s.cancelled && !isPast(s.date, s.e) && !reminderSent(s));
   const anns = useMemo(() => announcesFor(sessions, me.id, (s) => sessionState(s, me.id).status !== 'out' || isMaybe(s, polls, me.id)), [sessions, polls, me.id, cancelled]); // eslint-disable-line react-hooks/exhaustive-deps
   const cancelledPolls = useMemo(() => cancelledPollsFor(polls, me.id), [polls, me.id, cancelled]); // eslint-disable-line react-hooks/exhaustive-deps
   const all = useMemo(() => sessionReminders(sessions, me.id), [sessions, me.id]);
@@ -240,7 +246,7 @@ function useAlerts(sessions, polls, me) {
 
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
   const votedPolls = openPolls.filter((p) => p.votes?.[me.id]);
-  return { invites, infos, anns, cancelled, cancelledPolls, freed, toConfirm, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
+  return { remindToday, invites, infos, anns, cancelled, cancelledPolls, freed, toConfirm, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
 }
 
 // Ligne compacte : titre + 1 ligne d'info + bouton
@@ -268,7 +274,7 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
 
   useEffect(() => {
     if (skip) return;
-    if (supportNew || a.invites.length || a.infos.length || a.anns.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
+    if (supportNew || a.remindToday.length || a.invites.length || a.infos.length || a.anns.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
     const showRem = (a.freed.length || a.toConfirm.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
     const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     const showChat = unread > 0 && ss.get('ge_chat_seen') !== '1';
@@ -290,8 +296,13 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
       </>}>
       {supportNew > 0 && (
         <button className="al-summary al-support" onClick={() => { close(); onSupport?.(); }}>
-          🛟 L’admin t’a répondu <ChevronRight size={15} />
+          <LifeBuoy size={15} /> L’admin t’a répondu <ChevronRight size={15} />
         </button>
+      )}
+      {a.remindToday.length > 0 && (
+        <Section title="Ta séance, c’est aujourd’hui" cls="prio">
+          {a.remindToday.map((s) => <RemindCard key={s.id} s={s} onOpen={openS} />)}
+        </Section>
       )}
       {a.invites.length > 0 && (
         <Section title="Tu es invité(e)" cls="prio">
@@ -359,14 +370,15 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, u
   const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
   const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
-  if (!a.invites.length && !supportNew && !a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
+  if (!a.remindToday.length && !a.invites.length && !supportNew && !a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
   return (
     <div className="al-bar">
       {supportNew > 0 && (
         <button className="al-card al-c-support" onClick={onSupport}>
-          <span className="al-ico">🛟</span><span className="grow"><b>L’admin t’a répondu</b></span><span className="al-go">Lire <ChevronRight size={16} /></span>
+          <LifeBuoy size={20} className="al-ico" /><span className="grow"><b>L’admin t’a répondu</b></span><span className="al-go">Lire <ChevronRight size={16} /></span>
         </button>
       )}
+      {a.remindToday.map((s) => <RemindCard key={s.id} s={s} onOpen={onSession} />)}
       {a.invites.map((x) => <InviteCard key={x.item.id} x={x} onOpen={() => (x.kind === 'poll' ? onGoPolls(x.item.id) : onSession(x.item))} />)}
       {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
       {a.anns.map((s) => <AnnounceCard key={s.id} s={s} onOpen={onSession} />)}
@@ -405,6 +417,23 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, u
           <span className="al-go">{a.pendingPolls.length ? 'Répondre' : 'Voir'} <ChevronRight size={16} /></span>
         </button>
       )}
+    </div>
+  );
+}
+
+// ---------- Organisateur, jour J : envoyer le rappel ----------
+export function RemindCard({ s, onOpen }) {
+  const [, force] = useState(0);
+  return (
+    <div className="al-card al-c-remind">
+      <div className="grow">
+        <span className="al-remind-tag">⏰ Rappel du jour</span>
+        <button className="al-sess-main" onClick={() => onOpen(s)}>
+          <b>{s.title}</b>
+          <span className="muted tiny">Aujourd’hui · {fmt(s.s)}–{fmt(s.e)} · {(s.attendees || []).length} inscrits</span>
+        </button>
+        <WaButton wide onClick={() => { shareWhatsApp(reminderMessage(s)); markReminderSent(s); force((n) => n + 1); }} />
+      </div>
     </div>
   );
 }

@@ -29,7 +29,7 @@ export function TicketThread({ t, side, onReply }) {
     <div className="tk-thread">
       {msgs.map((m, i) => (
         <div key={i} className={'tk-msg ' + (m.from === side ? 'mine' : '') + (m.from === 'admin' ? ' admin' : '')}>
-          <span className="tk-who">{m.from === 'admin' ? '🛟 Admin' : side === 'admin' ? t.byName : 'Toi'} · {timeAgo(m.at)}</span>
+          <span className="tk-who">{m.from === 'admin' ? 'Admin' : side === 'admin' ? t.byName : 'Toi'} · {timeAgo(m.at)}</span>
           <p>{m.text}</p>
         </div>
       ))}

@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { UserX } from 'lucide-react';
+import { AlarmClock, UserX } from 'lucide-react';
+import WaButton from './WaButton';
+import { reminderMessage, shareWhatsApp } from '../share';
 import { saveNoShows } from '../data';
 import { isOver, leavesOf } from '../attendance';
 import { Avatar } from './ui';
@@ -69,6 +71,28 @@ export function CreatorAttendance({ s, people, me, canManage }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ---------- Rappel à partager sur WhatsApp (organisateur) ----------
+export const reminderSent = (s) => { try { return JSON.parse(localStorage.getItem('ge_remind_sent') || '[]').includes(`${s.id}:${s.date}`); } catch { return false; } };
+export const markReminderSent = (s) => { try { const k = 'ge_remind_sent'; localStorage.setItem(k, JSON.stringify([...new Set([...JSON.parse(localStorage.getItem(k) || '[]'), `${s.id}:${s.date}`])])); window.dispatchEvent(new Event('ge-cancel-seen')); } catch { /* */ } };
+export function ReminderBox({ s, canManage, highlight }) {
+  const [withInfo, setWithInfo] = useState(false);
+  const [sent, setSent] = useState(() => reminderSent(s));
+  if (!canManage || s.cancelled || isOver(s)) return null;
+  const hasInfo = !!(s.info?.place || s.info?.visio || s.info?.note);
+  return (
+    <div className={'remind-box' + (highlight ? ' hot' : '')}>
+      <b className="ca-title"><AlarmClock size={15} /> {highlight ? 'C’est bientôt : envoie le rappel' : 'Rappel à partager'}</b>
+      <p className="muted tiny">Un message tout prêt pour le groupe WhatsApp : titre, heure, inscrits{s.announce ? ', ton annonce' : ''} et le lien pour s’inscrire ou se désister.</p>
+      {hasInfo && (
+        <label className="switch"><input type="checkbox" checked={withInfo} onChange={(e) => setWithInfo(e.target.checked)} />
+          <span>Inclure le lieu / le lien visio <small className="muted">(sinon visibles seulement par les inscrits sur le site)</small></span></label>
+      )}
+      <WaButton wide onClick={() => { shareWhatsApp(reminderMessage(s, { withInfo })); markReminderSent(s); setSent(true); }} />
+      {sent && <span className="muted tiny">✓ Rappel déjà envoyé (tu peux le renvoyer)</span>}
     </div>
   );
 }

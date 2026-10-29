@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CalendarCheck, Clock, Ticket, Users, Vote } from 'lucide-react';
+import { AlertTriangle, CalendarCheck, Clock, LifeBuoy, Ticket, Users, Vote } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, LOG_TYPES, MOMENTS } from '../constants';
 import { inviteStatus } from '../data';
 import { DecisionCard, decisionsFor } from '../components/Alerts';
@@ -53,7 +53,7 @@ export default function AdminDashboard({ people, invites, polls, sessions, logs,
       </div>
 
       {(tickets || []).filter((t) => t.status === 'open').length > 0 && (
-        <div className="alert warn clickable" onClick={() => go('support')}>🛟 <div><b>{(tickets || []).filter((t) => t.status === 'open').length} demande(s) à traiter</b> dans Support.</div></div>
+        <div className="alert warn clickable" onClick={() => go('support')}><LifeBuoy size={18} /> <div><b>{(tickets || []).filter((t) => t.status === 'open').length} demande(s) à traiter</b> dans Support.</div></div>
       )}
       {decisionsFor(sessions, 'admin').map((s) => <DecisionCard key={s.id} s={s} me={ADMIN_ME} onOpen={() => go('sessions')} />)}
 

@@ -63,3 +63,24 @@ export function announceMessage(s, text) {
     `👉 ${deepLink('session', s.id)}`,
   ].join('\n'));
 }
+
+// Rappel du jour (à envoyer sur WhatsApp par l'organisateur)
+const whenWord = (iso) => {
+  const t = new Date(); const tm = new Date(Date.now() + 86400000);
+  const f = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return iso === f(t) ? 'aujourd’hui' : iso === f(tm) ? 'demain' : `le ${day(iso)}`;
+};
+export function reminderMessage(s, { withInfo = false } = {}) {
+  const w = whenWord(s.date);
+  const lines = [
+    `⏰ *Rappel : c’est ${w} !*`,
+    `📚 *${s.title}* · ${fmt(s.s)}-${fmt(s.e)} · ${SESSION_FORMATS[s.format] || s.format}`,
+  ];
+  if (withInfo && s.info?.place) lines.push(`📍 ${s.info.place}`);
+  if (withInfo && s.info?.visio) lines.push(`💻 ${s.info.visio}`);
+  if (withInfo && s.info?.note) lines.push(`📝 ${s.info.note.replace(/\n+/g, ' · ')}`);
+  lines.push(`👥 ${placesLabel(s)}`);
+  if (s.announce?.text) lines.push(`📣 ${s.announce.text}`);
+  lines.push('', `👉 Plus dispo ? Pas encore inscrit ? C’est ici : ${deepLink('session', s.id)}`);
+  return clean(lines.join('\n'));
+}

@@ -1256,3 +1256,9 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .spin { animation: spin 1s linear infinite; }
 .spot-sheet > .grow { flex: 1 1 100%; }
 .chip.on.ca-exc { --c: #0284C7; } .ca-done { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.remind-box { padding: 12px; border-radius: 12px; margin: 8px 0; border: 1px solid var(--border); background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; }
+.remind-box.hot { border: 2px solid #25D366; background: color-mix(in srgb, #25D366 8%, var(--surface)); }
+.al-card.al-c-remind { border-left: 4px solid #25D366; background: color-mix(in srgb, #25D366 8%, var(--surface)); }
+.al-c-remind .grow { display: flex; flex-direction: column; gap: 6px; }
+.al-remind-tag { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #15803D; }
+[data-theme="dark"] .al-remind-tag { color: #4ADE80; }

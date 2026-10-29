@@ -681,3 +681,36 @@ export async function fetchPersonLogs(name) {
   }
   return Object.values(out).sort((a, b) => (toDate(b.at)?.getTime() || 0) - (toDate(a.at)?.getTime() || 0));
 }
+
+// Rattrapage : désistements faits avant que le site les enregistre, retrouvés dans l'historique (n'ajoute que ce qui manque)
+export async function backfillLeaves(sessions, people) {
+  const snap = await getDocs(query(collection(db, 'logs'), where('type', '==', 'session_leave')));
+  const byName = {};
+  for (const p of people) byName[`${p.prenom} ${p.nom || ''}`.trim()] = p.id;
+  const day = (s) => new Date(`${s.date}T00:00:00`).getTime();
+  const start = (s) => day(s) + (s.s || 0) * 60000;
+  const end = (s) => day(s) + (s.e || s.s || 0) * 60000;
+  const upd = {};
+  for (const d of snap.docs) {
+    const l = d.data();
+    if (l.type !== 'session_leave') continue;
+    const id = byName[l.actor];
+    const at = toDate(l.at)?.getTime();
+    if (!id || !at) continue;
+    const same = sessions.filter((x) => x.title === l.target && !x.cancelled && end(x) > at);
+    const exact = same.filter((x) => l.details?.date && `${fmtDayShort(x.date)} ${fmt(x.s)}` === l.details.date);
+    const s = (exact.length ? exact : same).sort((a, b) => start(a) - start(b))[0];
+    if (!s || (s.attendees || []).includes(id) || s.leaves?.[id] || s.lateLeaves?.[id]) continue;
+    const u = (upd[s.id] ||= {});
+    if ((u[`leaves.${id}`] || 0) >= at) continue;
+    u[`leaves.${id}`] = at;
+    if (start(s) - at < 86400000) u[`lateLeaves.${id}`] = at; else delete u[`lateLeaves.${id}`];
+  }
+  let late = 0;
+  for (const [sid, u] of Object.entries(upd)) {
+    late += Object.keys(u).filter((k) => k.startsWith('lateLeaves.')).length;
+    await updateDoc(doc(db, 'sessions', sid), u);
+  }
+  await setDoc(doc(db, 'config', 'settings'), { leavesBackfillAt: Date.now() }, { merge: true });
+  return late;
+}

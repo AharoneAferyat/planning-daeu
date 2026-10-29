@@ -43,14 +43,17 @@ export function reliabilityStats(sessions) {
       else if (v === 'absent') { p.noShow++; p.history.push({ s, v: 'noShow' }); }
       else if (v === 'excused') { p.excused++; p.history.push({ s, v: 'excused' }); }
     }
+  }
+  // Désistements < 24 h : comptés tout de suite (même si la séance n'a pas encore eu lieu)
+  for (const s of (sessions || []).filter((x) => !x.cancelled)) {
     for (const l of leavesOf(s)) if (l.late) { const p = get(l.id); p.lateLeaves++; p.history.push({ s, v: 'lateLeave', at: l.at }); }
   }
   for (const p of Object.values(st)) {
-    // Lâchages : absent sans prévenir = 1, désistement < 24 h = 1, absent excusé = ½ (excusé tout le temps finit par peser)
-    p.flakes = p.noShow + p.lateLeaves;
+    // Lâchages : absent sans prévenir = 1 ; ceux qui ont prévenu (excusé, désistement < 24 h, séance annulée < 24 h) = ½
+    p.flakes = p.noShow;
     p.missed = p.noShow + p.lateLeaves + p.excused + p.lateCancels; // toutes les fois où la personne n'est pas venue / a lâché
     const n = p.total + p.lateLeaves + p.lateCancels;
-    p.rate = n ? Math.round(((n - p.flakes - (p.excused + p.lateCancels) * 0.5) / n) * 100) : null;
+    p.rate = n ? Math.round(((n - p.flakes - (p.excused + p.lateLeaves + p.lateCancels) * 0.5) / n) * 100) : null;
     p.history.sort((a, b) => b.s.date.localeCompare(a.s.date));
   }
   return st;

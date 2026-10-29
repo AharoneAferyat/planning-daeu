@@ -16,26 +16,41 @@ export function leavesOf(s) {
     .sort((a, b) => b.at - a.at);
 }
 
+// Présence notée par le créateur : 'present' | 'absent' | 'excused' | null (pas noté = on ne sait pas).
+// Anciennes séances (avant v58) : le créateur validait « tout le monde est venu », donc non coché = présent.
+export function markOf(s, id) {
+  const v = s.attendance?.[id];
+  if (v) return v;
+  return s.attendanceAt && !s.attendanceV ? 'present' : null;
+}
+
 // Par personne : séances où elle était inscrite (passées), « pas venu », désistements de dernière minute
 export function reliabilityStats(sessions) {
   const st = {};
-  const get = (id) => (st[id] ||= { id, total: 0, noShow: 0, excused: 0, lateLeaves: 0, history: [] });
+  const get = (id) => (st[id] ||= { id, total: 0, present: 0, unmarked: 0, noShow: 0, excused: 0, lateLeaves: 0, lateCancels: 0, history: [] });
+  // Organisateur qui annule sa séance moins de 24 h avant (avec d'autres inscrits)
+  for (const s of (sessions || []).filter((x) => x.cancelled && x.lateCancelBy && !hiddenId(x.lateCancelBy))) {
+    const p = get(s.lateCancelBy); p.lateCancels++; p.history.push({ s, v: 'lateCancel' });
+  }
   for (const s of (sessions || []).filter(isOver)) {
     for (const id of s.attendees || []) {
       if (hiddenId(id)) continue;
+      const v = markOf(s, id);
       const p = get(id);
+      if (!v) { p.unmarked++; continue; } // pas noté (oubli possible) : on ne compte rien
       p.total++;
-      if (s.attendance?.[id] === 'absent') { p.noShow++; p.history.push({ s, v: 'noShow' }); }
-      else if (s.attendance?.[id] === 'excused') { p.excused++; p.history.push({ s, v: 'excused' }); }
+      if (v === 'present') p.present++;
+      else if (v === 'absent') { p.noShow++; p.history.push({ s, v: 'noShow' }); }
+      else if (v === 'excused') { p.excused++; p.history.push({ s, v: 'excused' }); }
     }
     for (const l of leavesOf(s)) if (l.late) { const p = get(l.id); p.lateLeaves++; p.history.push({ s, v: 'lateLeave', at: l.at }); }
   }
   for (const p of Object.values(st)) {
     // Lâchages : absent sans prévenir = 1, désistement < 24 h = 1, absent excusé = ½ (excusé tout le temps finit par peser)
     p.flakes = p.noShow + p.lateLeaves;
-    p.missed = p.noShow + p.lateLeaves + p.excused; // toutes les fois où la personne n'est pas venue
-    const n = p.total + p.lateLeaves;
-    p.rate = n ? Math.round(((n - p.flakes - p.excused * 0.5) / n) * 100) : null;
+    p.missed = p.noShow + p.lateLeaves + p.excused + p.lateCancels; // toutes les fois où la personne n'est pas venue / a lâché
+    const n = p.total + p.lateLeaves + p.lateCancels;
+    p.rate = n ? Math.round(((n - p.flakes - (p.excused + p.lateCancels) * 0.5) / n) * 100) : null;
     p.history.sort((a, b) => b.s.date.localeCompare(a.s.date));
   }
   return st;
@@ -45,5 +60,5 @@ export function reliabilityStats(sessions) {
 export const FLAKY_MIN = 5;
 export const FLAKY_RATE = 0.9;
 // « Attention » : n'est pas venu (absent, excusé ou désisté au dernier moment) à plus de 90 % des séances, à partir de 5
-export const isFlaky = (r) => !!r && r.total + r.lateLeaves >= FLAKY_MIN && r.missed / (r.total + r.lateLeaves) > FLAKY_RATE;
+export const isFlaky = (r) => !!r && r.total + r.lateLeaves + r.lateCancels >= FLAKY_MIN && r.missed / (r.total + r.lateLeaves + r.lateCancels) > FLAKY_RATE;
 export const flakySet = (sessions) => new Set(Object.values(reliabilityStats(sessions)).filter(isFlaky).map((r) => r.id));

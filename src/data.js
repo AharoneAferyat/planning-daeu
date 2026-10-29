@@ -383,7 +383,15 @@ export async function answerMaybe(s, me, yes, mode) {
 
 // Annuler / rétablir / maintenir malgré le minimum
 export async function cancelSession(s, actor, cancel = true) {
-  await updateDoc(doc(db, 'sessions', s.id), cancel ? { cancelled: true, cancelledAt: serverTimestamp(), cancelledBy: actor } : { cancelled: false });
+  // Annulation par l'organisateur moins de 24 h avant, alors que d'autres étaient inscrits et que le minimum était atteint :
+  // comptée dans sa fiabilité (comme un absent excusé)
+  const start = new Date(`${s.date}T00:00:00`).getTime() + (s.s || 0) * 60000;
+  const others = (s.attendees || []).filter((id) => id !== s.createdBy).length;
+  const minOk = !s.min || (s.attendees || []).length >= Number(s.min);
+  const late = cancel && actor === s.createdByName && start - Date.now() < 86400000 && others > 0 && minOk;
+  await updateDoc(doc(db, 'sessions', s.id), cancel
+    ? { cancelled: true, cancelledAt: serverTimestamp(), cancelledAtMs: Date.now(), cancelledBy: actor, lateCancelBy: late ? s.createdBy : null }
+    : { cancelled: false, lateCancelBy: null });
   await log(cancel ? 'session_cancel' : 'session_restore', actor, s.title, { date: `${fmtDayShort(s.date)} ${fmt(s.s)}`, inscrits: (s.attendees || []).length });
 }
 export async function keepSession(s, actor) {
@@ -545,9 +553,9 @@ export const seeTicket = (t, side) => updateDoc(doc(db, 'tickets', t.id), side =
 // session.lateLeaves = { id: timestamp }  (désinscription moins de 24 h avant)
 // Absences notées par le créateur (ou l'admin) après la séance — session.attendance = { id: 'absent' | 'excused' }
 export async function saveNoShows(s, map, actor, nameOf) {
-  await updateDoc(doc(db, 'sessions', s.id), { attendance: map, attendanceAt: Date.now(), attendanceBy: actor });
+  await updateDoc(doc(db, 'sessions', s.id), { attendance: map, attendanceAt: Date.now(), attendanceBy: actor, attendanceV: 2 });
   const list = (k) => Object.keys(map).filter((id) => map[id] === k).map(nameOf).join(', ') || 'personne';
-  await log('session_attendance', actor, s.title, { absents: list('absent'), excusés: list('excused') });
+  await log('session_attendance', actor, s.title, { présents: list('present'), absents: list('absent'), excusés: list('excused') });
 }
 // Code oublié : la personne (pas encore connectée) laisse son numéro pour que l'admin lui renvoie son code
 export async function forgotPin(p, phone, note) {
@@ -662,4 +670,14 @@ export async function syncSpotsFromSheet(url, existing) {
   await setDoc(doc(db, 'config', 'settings'), { spotsSyncAt: Date.now() }, { merge: true });
   if (added || updated || removed) await log('spot_import', 'Google Sheet', `${added} ajouté(s), ${updated} mis à jour, ${removed} retiré(s)`, {});
   return { added, updated, removed, total: rows.length };
+}
+
+// Historique complet d'une personne (sans la limite des 600 dernières entrées de l'onglet Historique)
+export async function fetchPersonLogs(name) {
+  const out = {};
+  for (const field of ['actor', 'target']) {
+    const snap = await getDocs(query(collection(db, 'logs'), where(field, '==', name)));
+    for (const d of snap.docs) { const l = { id: d.id, ...d.data() }; if (l[field] === name) out[d.id] = l; }
+  }
+  return Object.values(out).sort((a, b) => (toDate(b.at)?.getTime() || 0) - (toDate(a.at)?.getTime() || 0));
 }

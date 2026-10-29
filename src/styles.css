@@ -1262,3 +1262,13 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .al-c-remind .grow { display: flex; flex-direction: column; gap: 6px; }
 .al-remind-tag { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #15803D; }
 [data-theme="dark"] .al-remind-tag { color: #4ADE80; }
+.fia-legend { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); margin-bottom: 12px; font-size: 13.5px; }
+.fia-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.fia-row small { color: var(--muted); }
+.fia-w { flex-shrink: 0; font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+.fia-w.full { background: color-mix(in srgb, #DC2626 14%, var(--surface)); color: #B91C1C; }
+.fia-w.half { background: color-mix(in srgb, #F59E0B 16%, var(--surface)); color: #B45309; }
+.fia-w.none { background: var(--surface); color: var(--muted); }
+.chip.on.ca-ok { --c: #16A34A; }
+.chip.ca-unset { border-style: dashed; color: var(--muted); }
+.fia-w.ok { background: color-mix(in srgb, #16A34A 14%, var(--surface)); color: #15803D; }

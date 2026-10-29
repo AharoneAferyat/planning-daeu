@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRightLeft, History, Pencil, Search, Trash2, UserPlus } from 'lucide-react';
 import { LOG_TYPES } from '../constants';
-import { deleteParticipant, log, mergeParticipants, setTempPin } from '../data';
+import { deleteParticipant, fetchPersonLogs, log, mergeParticipants, setTempPin } from '../data';
 import { daysCount, duplicatePairs, fmtDate, fmtDur, normName, randomPin, timeAgo, totalMinutes } from '../utils';
 import DispoForm from '../components/DispoForm';
 import { Avatar, ConfirmButton, Modal, PersonBadges } from '../components/ui';
@@ -123,10 +123,14 @@ function MergeModal({ a, b, onClose }) {
 
 function HistoModal({ p, logs, onClose }) {
   const full = `${p.prenom} ${p.nom || ''}`.trim();
-  const mine = logs.filter((l) => l.actor === full || l.target === full);
+  const [all, setAll] = useState(null);
+  useEffect(() => { fetchPersonLogs(full).then(setAll).catch(() => setAll(logs.filter((l) => l.actor === full || l.target === full))); }, [full]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mine = all || [];
+  const hasCreate = mine.some((l) => l.type === 'participant_create');
   return (
     <Modal wide title={`Historique · ${full}`} onClose={onClose}>
-      {mine.length === 0 ? <p className="muted">Rien dans l'historique récent.</p> : mine.map((l) => (
+      <p className="muted tiny histo-meta">Fiche créée le <b>{fmtDate(p.createdAt)}</b>{p.createdByAdmin ? ' (par l’admin)' : ''}{p.viaCode ? ` · via le code ${p.viaCode}` : ''}{!hasCreate && all ? ' · pas d’entrée « inscription » dans l’historique (enregistrement raté ou nom modifié depuis)' : ''}</p>
+      {all === null ? <p className="muted">Chargement…</p> : mine.length === 0 ? <p className="muted">Aucune entrée à ce nom dans l'historique.</p> : mine.map((l) => (
         <div key={l.id} className="log-row">
           <div className="log-head">
             <span className="pill">{LOG_TYPES[l.type] || l.type}</span>

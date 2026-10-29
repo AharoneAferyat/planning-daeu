@@ -3,7 +3,7 @@ import { AlarmClock, UserX } from 'lucide-react';
 import WaButton from './WaButton';
 import { reminderMessage, shareWhatsApp } from '../share';
 import { saveNoShows } from '../data';
-import { isOver, leavesOf } from '../attendance';
+import { isOver, leavesOf, markOf } from '../attendance';
 import { Avatar } from './ui';
 
 const fmtBefore = (ms) => {
@@ -12,20 +12,24 @@ const fmtBefore = (ms) => {
 };
 
 // Pour le créateur (et l'admin) : qui s'est désinscrit, et après la séance qui était absent (excusé ou non)
-const NEXT = { undefined: 'absent', absent: 'excused', excused: undefined };
+const NEXT = { undefined: 'present', present: 'absent', absent: 'excused', excused: undefined };
+const ICON = { present: '✅ ', absent: '❌ ', excused: '🙋 ' };
 export function CreatorAttendance({ s, people, me, canManage }) {
   const byId = Object.fromEntries(people.map((p) => [p.id, p]));
   const leaves = leavesOf(s);
   const over = isOver(s);
   const [edit, setEdit] = useState(false);
-  const [sel, setSel] = useState(() => ({ ...(s.attendance || {}) }));
+  const [sel, setSel] = useState(() => Object.fromEntries((s.attendees || []).map((id) => [id, markOf(s, id)]).filter(([, v]) => v)));
   const [busy, setBusy] = useState(false);
   if (!canManage || s.cancelled) return null;
-  const who = (k) => Object.keys(s.attendance || {}).filter((id) => s.attendance[id] === k).map((id) => byId[id]?.prenom).filter(Boolean);
+  const who = (k) => (s.attendees || []).filter((id) => markOf(s, id) === k).map((id) => byId[id]?.prenom).filter(Boolean);
   const start = new Date(`${s.date}T00:00:00`).getTime() + s.s * 60000;
   if (!leaves.length && !over) return null;
   const nA = Object.values(sel).filter((v) => v === 'absent').length;
   const nE = Object.values(sel).filter((v) => v === 'excused').length;
+  const nP = Object.values(sel).filter((v) => v === 'present').length;
+  const ids = (s.attendees || []).filter((id) => byId[id]);
+  const nU = ids.filter((id) => !sel[id]).length;
 
   return (
     <div className="ca-box">
@@ -42,31 +46,32 @@ export function CreatorAttendance({ s, people, me, canManage }) {
       )}
       {over && (
         <>
-          <b className="ca-title"><UserX size={15} /> Qui n’est pas venu ?</b>
+          <b className="ca-title"><UserX size={15} /> Qui est venu ?</b>
           {!edit && s.attendanceAt ? (
             <p className="ca-done">
-              {!who('absent').length && !who('excused').length ? 'Tout le monde est venu 👍' : <>
-                {who('absent').length > 0 && <span>❌ Absent{who('absent').length > 1 ? 's' : ''} : <b>{who('absent').join(', ')}</b></span>}
-                {who('excused').length > 0 && <span>🙋 Excusé{who('excused').length > 1 ? 's' : ''} : <b>{who('excused').join(', ')}</b></span>}
-              </>}
+              {who('present').length > 0 && <span>✅ Présent{who('present').length > 1 ? 's' : ''} : <b>{who('present').join(', ')}</b></span>}
+              {who('absent').length > 0 && <span>❌ Absent{who('absent').length > 1 ? 's' : ''} : <b>{who('absent').join(', ')}</b></span>}
+              {who('excused').length > 0 && <span>🙋 Excusé{who('excused').length > 1 ? 's' : ''} : <b>{who('excused').join(', ')}</b></span>}
+              {ids.some((id) => !markOf(s, id)) && <span className="muted">Pas noté : {ids.filter((id) => !markOf(s, id)).map((id) => byId[id].prenom).join(', ')}</span>}
               <button className="link tiny" onClick={() => setEdit(true)}>Modifier</button>
             </p>
           ) : (
             <>
-              <p className="muted tiny">Touche un prénom : 1 fois = ❌ absent, 2 fois = 🙋 absent excusé (avait prévenu), 3 fois = présent. Facultatif.</p>
+              <p className="muted tiny">Touche un prénom : ✅ présent → ❌ absent → 🙋 excusé (avait prévenu) → pas noté. Ceux que tu ne notes pas ne comptent pas.</p>
               <div className="ca-chips">
-                {(s.attendees || []).map((id) => byId[id]).filter(Boolean).map((p) => (
-                  <button key={p.id} className={'chip small' + (sel[p.id] === 'absent' ? ' on ca-no' : sel[p.id] === 'excused' ? ' on ca-exc' : '')}
+                {ids.map((id) => byId[id]).map((p) => (
+                  <button key={p.id} className={'chip small' + (sel[p.id] === 'present' ? ' on ca-ok' : sel[p.id] === 'absent' ? ' on ca-no' : sel[p.id] === 'excused' ? ' on ca-exc' : ' ca-unset')}
                     onClick={() => setSel((x) => { const n = { ...x }; const v = NEXT[x[p.id]]; if (v) n[p.id] = v; else delete n[p.id]; return n; })}>
-                    {sel[p.id] === 'absent' ? '❌ ' : sel[p.id] === 'excused' ? '🙋 ' : ''}{p.prenom}
+                    {ICON[sel[p.id]] || ''}{p.prenom}
                   </button>
                 ))}
               </div>
-              <button className="btn small" disabled={busy} onClick={async () => {
+              {nU > 0 && <button className="link tiny" onClick={() => setSel((x) => Object.fromEntries(ids.map((id) => [id, x[id] || 'present'])))}>✅ {nU > 1 ? `Marquer les ${nU} autres présents` : 'Marquer l’autre présent'}</button>}
+              <button className="btn small" disabled={busy || !(nP + nA + nE)} onClick={async () => {
                 setBusy(true);
                 await saveNoShows(s, sel, me.id === 'admin' ? 'Admin' : `${me.prenom} ${me.nom || ''}`.trim(), (id) => byId[id]?.prenom || '?');
                 setBusy(false); setEdit(false);
-              }}>{nA + nE ? `Enregistrer (${[nA && `${nA} absent${nA > 1 ? 's' : ''}`, nE && `${nE} excusé${nE > 1 ? 's' : ''}`].filter(Boolean).join(', ')})` : 'Tout le monde est venu'}</button>
+              }}>{nP + nA + nE ? `Enregistrer · ${[nP && `${nP} ✅`, nA && `${nA} ❌`, nE && `${nE} 🙋`].filter(Boolean).join('  ')}` : 'Note au moins une personne'}</button>
             </>
           )}
         </>

@@ -70,11 +70,11 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
 }
 
 // Champs « infos importantes » réutilisables (clôture de sondage, création de séance)
-export function InfoFields({ format = 'hybride', value, onChange }) {
+export function InfoFields({ format = 'hybride', value, onChange, required }) {
   const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
   return (
     <div className="info-box editing info-fields">
-      <h4><Info size={16} /> Infos importantes <small>(visibles uniquement par les inscrits, facultatif : modifiables plus tard)</small></h4>
+      <h4><Info size={16} /> Infos importantes <small>(visibles uniquement par les inscrits{required ? ' · lieu et lien obligatoires, consignes facultatives' : ', facultatif : modifiables plus tard'})</small></h4>
       {needsPlace(format) && (
         <label className="field"><span>Lieu {format === 'hybride' ? '(partie présentielle)' : ''}</span>
           <input value={value.place || ''} onChange={set('place')} placeholder="Ex : BU Sainte-Barbe, salle 2, 2e étage" maxLength={200} />

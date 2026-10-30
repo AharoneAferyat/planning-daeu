@@ -5,6 +5,7 @@ import {
   ArrowLeft, CalendarCheck, FlaskConical, History, KeyRound, LayoutDashboard, LifeBuoy, LogOut, Settings, ShieldCheck, Ticket, UserCheck, Users,
 } from 'lucide-react';
 import { DEFAULT_ADMIN_PIN } from '../config';
+import { NeedsInfoModal, useAutoClose } from '../components/AutoClose';
 import { exportBackup, log, ticketNewForAdmin, useCircles, useSpots, useInvites, useLogs, useParticipants, usePolls, useSessions, useSettings, useTickets } from '../data';
 import AdminSupport from './AdminSupport';
 import AdminAttendance from './AdminAttendance';
@@ -81,6 +82,7 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
   const spots = useSpots();
   useEffect(() => { setCirclesStore(circles); }, [circles]);
   useEffect(() => { setSpotsStore(spots); }, [spots]);
+  useAutoClose(polls);
   const go = (k) => { setTab(k); ss.set('ge_admin_tab', k); window.scrollTo(0, 0); };
   if (!people || !invites || !polls || !sessions || !logs) return <Spinner />;
   const data = { settings, people, invites, polls, sessions, logs, go, tickets };
@@ -123,6 +125,7 @@ function AdminShell({ settings, theme, cycleTheme, onLogout }) {
         {tab === 'test' && <AdminTest {...data} />}
         {tab === 'settings' && <AdminSettings {...data} />}
       </main>
+      <NeedsInfoModal sessions={sessions} me={{ id: 'admin' }} />
     </div>
   );
 }

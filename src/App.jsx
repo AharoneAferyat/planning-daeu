@@ -28,6 +28,7 @@ import { Avatar, Spinner, Toast } from './components/ui';
 import { AlertsBar, AlertsPopup } from './components/Alerts';
 import CatBar from './components/CatBar';
 import ProfileUpdate, { pendingSteps } from './components/ProfileUpdate';
+import { NeedsInfoModal, pendingInfoSession, useAutoClose } from './components/AutoClose';
 import { isReadOnly, isTestId, stopViewAs, viewAsId } from './testmode';
 import { isOpenPoll } from './places';
 import { canSee, formationsOf, FORMATIONS, inAudience, isHybridCombo, subjectOk } from './formations';
@@ -53,6 +54,7 @@ function PublicApp() {
   const [people, peopleErr] = useParticipants();
   const polls = usePolls();
   const sessions = useSessions();
+  useAutoClose(polls);
   // Cercles : chargés une fois, partagés par toutes les vérifications « sur invitation »
   const circles = useCircles();
   useEffect(() => { setCirclesStore(circles); }, [circles]);
@@ -347,7 +349,7 @@ function PublicApp() {
         onClose={() => { setPollForm(null); setView('seances'); }} />}
       {sessionForm && <SessionForm initial={sessionForm.initial} prefill={sessionForm.prefill} people={people} me={me} settings={settings} defaultAudience={cat !== 'all' ? [cat] : []} defaultSubject={sub !== 'all' ? sub : ''}
         onClose={() => setSessionForm(null)} />}
-      {pendingSteps(me, settings).length > 0 && !promptDone ? (
+      {pendingInfoSession(sessions, me) && !isReadOnly() ? <NeedsInfoModal sessions={sessions} me={me} /> : pendingSteps(me, settings).length > 0 && !promptDone ? (
         <ProfileUpdate me={me} settings={settings} onDone={(patch) => { setPromptDone(true); const f = patch.formations; if (f?.length === 1) setCat(f[0]); setToast('C’est noté, merci !'); }} />
       ) : <AlertsPopup skip={deepLinked} supportNew={supportNew} onSupport={() => setSupport(true)} unread={chatList.filter((x) => x.unread).length} sessions={seeSessions} polls={seePolls} people={people} me={me} onSession={setSessionOpen} onGoPolls={goPolls} />}
       <Toast text={toast} onDone={clearToast} />

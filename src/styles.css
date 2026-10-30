@@ -1272,3 +1272,11 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .chip.on.ca-ok { --c: #16A34A; }
 .chip.ca-unset { border-style: dashed; color: var(--muted); }
 .fia-w.ok { background: color-mix(in srgb, #16A34A 14%, var(--surface)); color: #15803D; }
+.ni-head { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 6px; font-size: 14.5px; }
+.ni-head svg { flex-shrink: 0; margin-top: 3px; color: var(--primary); }
+.dl-row { display: grid; grid-template-columns: 3fr 2fr; gap: 8px; }
+.prep-box { border: 1px dashed var(--border); border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
+.prep-box > summary { cursor: pointer; font-weight: 700; font-size: 14px; list-style: none; }
+.prep-box > summary::-webkit-details-marker { display: none; }
+.prep-box[open] > summary { margin-bottom: 6px; }
+.auto-pill { display: inline-block; margin-left: 4px; }

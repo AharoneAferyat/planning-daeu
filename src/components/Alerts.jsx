@@ -11,6 +11,7 @@ import { decisionFor, isMaybe, isOpenPoll, placesLabel, sessionState } from '../
 import { hiddenId } from '../testmode';
 import { hasInfo, InfoLines } from './SessionInfo';
 import { ConfirmButton } from './ui';
+import { deadlineLabel } from '../autoclose';
 
 const readList = (k) => { try { return JSON.parse(ls.get(k) || '[]'); } catch { return []; } };
 
@@ -256,7 +257,7 @@ function PollRow({ p, total, onGo, onHide }) {
     <div className="al-row">
       <button className="al-row-main" onClick={onGo}>
         <b>{p.title}</b>
-        <span className="muted tiny">{nVotes}/{total} réponses{p.deadline ? ` · avant le ${fmtDayShort(p.deadline)}` : ''}</span>
+        <span className="muted tiny">{nVotes}/{total} réponses{p.deadline ? ` · avant le ${deadlineLabel(p, fmtDayShort)}` : ''}</span>
       </button>
       <button className="btn small primary" onClick={onGo}>Répondre</button>
       <button className="icon-btn" onClick={onHide} title="Ne plus me le rappeler" aria-label="Ne plus afficher"><EyeOff size={16} /></button>

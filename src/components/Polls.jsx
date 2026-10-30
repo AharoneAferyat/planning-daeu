@@ -22,6 +22,7 @@ import { canSeeSpot, conditionsOf, mapsLink, spotStatus, useSpotsStore } from '.
 import { invitedIds, privateLabel } from '../privacy';
 import { isSessionMember, openChat, SessionChatBlock } from './Chat';
 import { CreatorAttendance, ReminderBox } from './Attendance';
+import { deadlineAt, deadlineLabel, deadlinePassed as dlPassed, scoreOf } from '../autoclose';
 import { sessionConvId } from '../data';
 import { audienceLabel, conflictsFor, formationsOf, FORMATIONS, holidayOn, personCoursesAt, personInAudience, SUBJECTS, withoutCourses } from '../formations';
 
@@ -42,14 +43,6 @@ export function forecast(allPeople, date, s, e, ctx = {}) {
   return { full, part };
 }
 
-function scoreOf(poll, optId) {
-  let yes = 0, maybe = 0, no = 0;
-  for (const [id, v] of Object.entries(poll.votes || {})) {
-    if (hiddenId(id)) continue;
-    if (v?.[optId] === 'yes') yes++; else if (v?.[optId] === 'maybe') maybe++; else if (v?.[optId] === 'no') no++;
-  }
-  return { yes, maybe, no, score: yes * 2 + maybe };
-}
 
 // =================== Vue principale ===================
 // Catégorie repliable (repliée par défaut)
@@ -181,7 +174,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
   const notVoted = people.filter((p) => !poll.votes?.[p.id] && personInAudience(poll, p));
   const scores = Object.fromEntries(poll.options.map((o) => [o.id, scoreOf(poll, o.id)]));
   const best = Math.max(0, ...Object.values(scores).map((s) => s.score));
-  const deadlinePassed = poll.deadline && isPast(poll.deadline);
+  const deadlinePassed = dlPassed(poll);
   const iVoted = me && poll.votes?.[me.id];
   const max = Number(poll.max) || 0;
   const min = Number(poll.min) || 0;
@@ -211,8 +204,9 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
           <h4>{poll.title}</h4>
           <div className="muted tiny">
             par {poll.createdByName} · {timeAgo(poll.createdAt)}
-            {poll.deadline && <> · réponse avant le {fmtDayShort(poll.deadline)}{deadlinePassed && ' (dépassé)'}</>}
+            {poll.deadline && <> · réponse avant le {deadlineLabel(poll)}{deadlinePassed && !closed ? ' (dépassé)' : ''}{poll.autoClose && !closed && !poll.autoSkipped ? ' · séance créée automatiquement à cette heure' : ''}</>}
           </div>
+          {poll.autoSkipped && !closed && canManage && <p className="muted tiny">⏳ Date limite passée sans aucun « Oui » sur une date à venir : la séance n’a pas été créée automatiquement.</p>}
           {poll.description && <p className="poll-desc">{poll.description}</p>}
           <AudiencePill item={poll} />
           <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}{min > 0 ? ` · ${min} minimum` : ''}</div>
@@ -367,7 +361,7 @@ function ClosePollModal({ poll, scores, me, onClose, settings }) {
   const [format, setFormat] = useState(poll.format || 'hybride');
   const allSpots = useSpotsStore();
   const [spotId, setSpotId] = useState(poll.spotId || null);
-  const [info, setInfo] = useState(() => { const sp = allSpots.find((x) => x.id === poll.spotId); return sp ? spotInfo(sp) : { place: poll.place || '' }; });
+  const [info, setInfo] = useState(() => { const sp = allSpots.find((x) => x.id === poll.spotId); return { ...(sp ? spotInfo(sp) : { place: poll.place || '' }), ...(poll.sessionInfo || {}) }; });
   const [notify, setNotify] = useState(true);
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -424,6 +418,9 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   const [place, setPlace] = useState(initial?.place || '');
   const [spotId, setSpotId] = useState(initial?.spotId || null);
   const [deadline, setDeadline] = useState(initial?.deadline || '');
+  const [deadlineTime, setDeadlineTime] = useState(initial?.deadlineTime || '');
+  const [autoClose, setAutoClose] = useState(initial?.id ? !!initial.autoClose : true);
+  const [prep, setPrep] = useState(() => initial?.sessionInfo || {});
   const [max, setMax] = useState(initial?.max || '');
   const [min, setMin] = useState(initial?.min || '');
   const [options, setOptions] = useState(() => initial?.options?.map((o) => ({ ...o, sh: toHHMM(o.s), eh: toHHMM(o.e) }))
@@ -454,7 +451,14 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
     if (Number(min) && Number(max) && Number(min) > Number(max)) return setErr('Le minimum ne peut pas dépasser le maximum.');
     if (invite.private && !invitedIds({ invite }).filter((x) => x !== me?.id).length) return setErr('Sur invitation : choisis au moins une personne ou un cercle.');
     opts.sort((a, b) => (a.date + a.s).localeCompare(b.date + b.s));
-    const data = { title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
+    if (deadlineTime && !deadline) return setErr('Choisis aussi le jour de la date limite.');
+    const dl = deadlineAt({ deadline, deadlineTime });
+    if (dl && autoClose) {
+      if (dl <= Date.now()) return setErr('La date limite est déjà passée.');
+      if (!opts.some((o) => { const d = parseIso(o.date); d.setHours(0, o.s, 0, 0); return d.getTime() > dl; })) return setErr('La date limite doit tomber avant au moins une des dates proposées.');
+    }
+    const prepClean = { place: (prep.place || '').trim(), visio: (prep.visio || '').trim(), note: (prep.note || '').trim() };
+    const data = { deadlineTime: deadline ? deadlineTime || null : null, autoClose: !!deadline && autoClose, autoSkipped: null, autoClaim: null, sessionInfo: prepClean.place || prepClean.visio || prepClean.note ? prepClean : null, title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
     setBusy(true);
     try {
       if (isEdit) {
@@ -484,8 +488,25 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
           </select>
         </label>
         <label className="field"><span>Lieu (optionnel)</span><input value={place} onChange={(e) => { setPlace(e.target.value); setSpotId(null); }} /></label>
-        <label className="field"><span>Répondre avant le</span><input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} /></label>
       </div>
+      <div className="field"><span>Date limite pour répondre (facultatif)</span>
+        <div className="dl-row">
+          <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} aria-label="Jour" />
+          <input type="time" step={900} value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} aria-label="Heure" disabled={!deadline} />
+        </div>
+      </div>
+      {deadline && (
+        <label className="switch">
+          <input type="checkbox" checked={autoClose} onChange={(e) => setAutoClose(e.target.checked)} />
+          <span><b>Créer la séance automatiquement à la date limite</b><br />
+            <small className="muted">À {deadlineTime ? fmt(toMin(deadlineTime)) : '23h59 (fin de journée)'}, la date avec le plus de « Oui » devient une séance (à égalité : la plus proche), si tu n’as pas clôturé avant. Sans infos préparées, on te les demande à ta prochaine connexion.</small></span>
+        </label>
+      )}
+      <details className="prep-box" open={!!(prep.place || prep.visio || prep.note)}>
+        <summary>📝 Préparer les infos de la séance (facultatif)</summary>
+        <p className="muted tiny">Pas affichées dans le sondage : elles iront dans la séance (visibles des inscrits seulement), déjà remplies à la clôture.</p>
+        <InfoFields format={format} value={prep} onChange={setPrep} />
+      </details>
       {!isEdit && me && me.id !== 'admin' && (
         <label className="switch">
           <input type="checkbox" checked={imAvailable} onChange={(e) => setImAvailable(e.target.checked)} />

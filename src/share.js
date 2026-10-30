@@ -2,7 +2,7 @@
 import { FORMATIONS, SUBJECTS } from './formations';
 import { SESSION_FORMATS } from './constants';
 import { placesLabel } from './places';
-import { fmt, fmtDay, ls } from './utils';
+import { fmt, fmtDay, ls, toMin as toMinS } from './utils';
 
 // Lien direct. Le code d'invitation est ajouté pour ceux qui ne sont pas encore connectés.
 export function deepLink(type, id) {
@@ -33,7 +33,7 @@ export function pollMessage(p) {
   ];
   const extra = [p.format && (SESSION_FORMATS[p.format] || p.format), p.max && `${p.max} places max`].filter(Boolean).join(' · ');
   if (extra) lines.push(`📍 ${extra}`);
-  if (p.deadline) lines.push(`⏳ Réponds avant le ${day(p.deadline)}`);
+  if (p.deadline) lines.push(`⏳ Réponds avant le ${day(p.deadline)}${p.deadlineTime ? ` à ${fmt(toMinS(p.deadlineTime))}` : ''}${p.autoClose ? ' (la séance sera créée automatiquement)' : ''}`);
   lines.push('', `👉 Réponds ici : ${deepLink('poll', p.id)}`);
   return clean(lines.join('\n'));
 }

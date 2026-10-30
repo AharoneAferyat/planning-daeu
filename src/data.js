@@ -249,9 +249,10 @@ export async function closePoll(poll, option, extra, actor) {
     format, modes, place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
     ...(extra.infoData || {}),
+    ...(extra.needsInfo ? { needsInfo: true, autoCreated: true } : extra.auto ? { autoCreated: true } : {}),
     attendees, waitlist, maybes, max, min, spotId: extra.spotId ?? poll.spotId ?? null, audience: poll.audience || [], private: !!poll.private, invite: poll.invite || null, subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
-  await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp() });
+  await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp(), ...(extra.auto ? { autoClosed: true } : {}) });
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
   return sRef.id;
 }
@@ -367,7 +368,7 @@ export async function joinSession(s, me, join, opts = {}) {
 // Infos pratiques (lieu, distanciel, consignes) : visibles des inscrits uniquement
 export async function saveSessionInfo(s, info, actor) {
   const clean = { place: (info.place || '').trim(), visio: (info.visio || '').trim(), note: (info.note || '').trim() };
-  await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp() });
+  await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp(), needsInfo: deleteField() });
   await log('session_info', actor, s.title, { lieu: clean.place || '—', distanciel: clean.visio || '—', consignes: clean.note || '—' });
 }
 
@@ -713,4 +714,20 @@ export async function backfillLeaves(sessions, people) {
   }
   await setDoc(doc(db, 'config', 'settings'), { leavesBackfillAt: Date.now() }, { merge: true });
   return late;
+}
+
+// Clôture automatique à la date limite : un seul appareil s'en charge (verrou de 2 min)
+export async function claimAutoClose(poll) {
+  const ref = doc(db, 'polls', poll.id);
+  return runTransaction(db, async (tx) => {
+    const d = (await tx.get(ref)).data();
+    if (!d || d.status !== 'open' || !d.autoClose || d.autoSkipped) return false;
+    if (d.autoClaim && Date.now() - d.autoClaim < 120000) return false;
+    tx.update(ref, { autoClaim: Date.now() });
+    return true;
+  });
+}
+export async function skipAutoClose(poll) {
+  await updateDoc(doc(db, 'polls', poll.id), { autoSkipped: Date.now() });
+  await log('poll_close', 'Automatique', poll.title, { info: 'date limite passée, aucune date avec des « Oui » : pas de séance créée' });
 }

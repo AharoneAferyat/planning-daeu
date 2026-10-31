@@ -12,8 +12,11 @@ import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleM
 import { isHybrid, isMaybe, isOpenPoll, maybesOf, placesLabel, pollModeOf, sessionState, splitPlaces, yesByMode, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
 import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfoSeen } from './SessionInfo';
-import { pollMessage, sessionMessage, shareWhatsApp } from '../share';
-import WaButton, { SharedDone } from './WaButton';
+import { changeMessage, pollMessage, sessionMessage, shareWhatsApp } from '../share';
+import WaButton, { ChangedDone, SharedDone } from './WaButton';
+import { plain, pollDiff, recentChange, sessionDiff } from '../changes';
+
+const ChangeNote = ({ x }) => { const c = recentChange(x); return c ? <p className="chg-note"><b>🔄 Modifié {timeAgo(c.at)}</b> : {c.list.map(plain).join(' · ')}</p> : null; };
 import PollComments from './PollComments';
 import { InvitePicker } from './Circles';
 import { SpotPickField, spotPlace } from './Spots';
@@ -207,6 +210,7 @@ function PollCard({ poll, people, me, isAdmin, onEdit, onSession, onTouched, set
             {poll.deadline && <> · réponse avant le {deadlineLabel(poll)}{deadlinePassed && !closed ? ' (dépassé)' : ''}{poll.autoClose && !closed && !poll.autoSkipped ? ' · séance créée automatiquement à cette heure' : ''}</>}
           </div>
           {poll.autoSkipped && !closed && canManage && <p className="muted tiny">⏳ Date limite passée sans aucun « Oui » sur une date à venir : la séance n’a pas été créée automatiquement.</p>}
+          {!closed && <ChangeNote x={poll} />}
           {poll.description && <p className="poll-desc">{poll.description}</p>}
           <AudiencePill item={poll} />
           <div className="muted tiny">{SESSION_FORMATS[poll.format] || 'Hybride'}{poll.place ? ` · ${poll.place}` : ''}{max > 0 ? ` · ${max} places max` : ''}{min > 0 ? ` · ${min} minimum` : ''}</div>
@@ -427,6 +431,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
     || prefill || [{ id: uid(), date: isoDate(new Date(Date.now() + 86400000)), sh: '14:00', eh: '17:00' }]);
   const [err, setErr] = useState('');
   const [created, setCreated] = useState(null);
+  const [changed, setChanged] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const setOpt = (i, k, v) => setOptions((o) => o.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -468,7 +473,9 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
         if (me && me.id !== 'admin' && me.id === initial.createdBy && added.length) {
           for (const o of added) { extra[`votes.${me.id}.${o.id}`] = 'yes'; extra[`queue.${o.id}`] = arrayUnion(me.id); }
         }
-        await updatePoll(initial.id, { ...data, ...extra }, actorName(me), data.title); onClose();
+        const changes = pollDiff(initial, data);
+        await updatePoll(initial.id, { ...data, ...extra }, actorName(me), data.title, changes);
+        if (changes.length && initial.status !== 'closed' && initial.status !== 'cancelled') setChanged({ list: changes, item: { ...initial, ...data } }); else onClose();
       }
       else { const id = await createPoll(data, me, imAvailable); setCreated({ ...data, id, status: 'open' }); }
     } catch (e) { setErr(e.message); }
@@ -476,6 +483,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   };
 
   return (
+    changed ? <ChangedDone list={changed.list} onShare={() => shareWhatsApp(changeMessage('poll', changed.item, changed.list))} onClose={onClose} /> :
     created ? <SharedDone title="Sondage publié" item={created.title} onShare={() => shareWhatsApp(pollMessage(created))} onClose={onClose} /> :
     <Modal wide title={isEdit ? 'Modifier le sondage' : 'Nouveau sondage'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Publier le sondage'}</button></>}>
@@ -610,6 +618,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <AudiencePill item={s} />
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
+      {!st.cancelled && <ChangeNote x={s} />}
       {!st.cancelled && <SessionInfoBlock s={s} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
       <ReminderBox s={s} canManage={canManage} highlight={s.date <= isoDate(new Date(Date.now() + 86400000))} />
       <CreatorAttendance s={s} people={people} me={me} canManage={canManage} />
@@ -751,6 +760,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const maxLocked = !!(isEdit && initial.pollId && initial.max && me?.id !== 'admin');
   const [err, setErr] = useState('');
   const [created, setCreated] = useState(null);
+  const [changed, setChanged] = useState(null);
   const [busy, setBusy] = useState(false);
   const s = toMin(sh), e0 = toMin(eh);
   const item = { audience, subject, respectSchedule, format };
@@ -773,7 +783,12 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
     const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify, audience, subject: subject || null, respectSchedule, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
     setBusy(true);
     try {
-      if (isEdit) await updateSession(initial.id, data, actorName(me), data.title);
+      if (isEdit) {
+        const changes = sessionDiff(initial, data);
+        await updateSession(initial.id, data, actorName(me), data.title, changes);
+        if (changes.length && !initial.cancelled) { setChanged({ list: changes, item: { ...initial, ...data } }); setBusy(false); return; }
+        onClose();
+      }
       else {
         const extra = infoData(format, info);
         const id = await createSession({ ...data, ...extra }, me);
@@ -785,6 +800,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   };
 
   return (
+    changed ? <ChangedDone list={changed.list} onShare={() => shareWhatsApp(changeMessage('session', changed.item, changed.list))} onClose={onClose} /> :
     created ? <SharedDone title="Séance ajoutée au planning" item={created.title} onShare={() => shareWhatsApp(sessionMessage(created))} onClose={onClose} /> :
     <Modal wide title={isEdit ? 'Modifier la séance' : 'Planifier une séance'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Ajouter au planning'}</button></>}>

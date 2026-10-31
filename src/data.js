@@ -211,9 +211,10 @@ export async function createPoll(data, me, imAvailable = true) {
   await log('poll_create', `${me.prenom} ${me.nom || ''}`.trim(), data.title, { options: data.options.length });
   return ref.id;
 }
-export async function updatePoll(id, data, actor, title) {
-  await updateDoc(doc(db, 'polls', id), { ...data, updatedAt: serverTimestamp() });
-  await log('poll_update', actor, title, {});
+export async function updatePoll(id, data, actor, title, changes = []) {
+  const ch = changes.length ? { lastChange: { at: Date.now(), by: actor, list: changes }, changeV: increment(1) } : {};
+  await updateDoc(doc(db, 'polls', id), { ...data, ...ch, updatedAt: serverTimestamp() });
+  await log('poll_update', actor, title, changes.length ? { changes: changes.map((c) => c.replace(/\*/g, '')) } : {});
 }
 // Mode choisi pour une date d'un sondage hybride
 export async function setPollMode(poll, me, optId, mode) {
@@ -297,9 +298,10 @@ export async function createSession(data, me) {
   await log('session_create', `${me.prenom} ${me.nom || ''}`.trim(), data.title, { date: `${fmtDayShort(data.date)} ${fmt(data.s)}–${fmt(data.e)}` });
   return ref.id;
 }
-export async function updateSession(id, data, actor, title) {
-  await updateDoc(doc(db, 'sessions', id), { ...data, updatedAt: serverTimestamp() });
-  await log('session_update', actor, title, data.date ? { date: `${fmtDayShort(data.date)} ${fmt(data.s)}–${fmt(data.e)}` } : {});
+export async function updateSession(id, data, actor, title, changes = []) {
+  const ch = changes.length ? { lastChange: { at: Date.now(), by: actor, list: changes }, changeV: increment(1) } : {};
+  await updateDoc(doc(db, 'sessions', id), { ...data, ...ch, updatedAt: serverTimestamp() });
+  await log('session_update', actor, title, { ...(data.date ? { date: `${fmtDayShort(data.date)} ${fmt(data.s)}–${fmt(data.e)}` } : {}), ...(changes.length ? { modifs: changes.map((c) => c.replace(/\*/g, '')).join(' · ') } : {}) });
 }
 // Inscription / désinscription avec places limitées.
 // Renvoie 'in' (place obtenue), 'wait' (liste d'attente), 'freed' (place libérée) ou 'out'.
@@ -368,7 +370,11 @@ export async function joinSession(s, me, join, opts = {}) {
 // Infos pratiques (lieu, distanciel, consignes) : visibles des inscrits uniquement
 export async function saveSessionInfo(s, info, actor) {
   const clean = { place: (info.place || '').trim(), visio: (info.visio || '').trim(), note: (info.note || '').trim() };
-  await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp(), needsInfo: deleteField() });
+  const o = s.info || {};
+  const had = o.place || o.visio || o.note;
+  const changed = had && (o.place !== clean.place || o.visio !== clean.visio || o.note !== clean.note);
+  const ch = changed ? { lastChange: { at: Date.now(), by: actor, list: ['ℹ️ Infos importantes modifiées (lieu, lien ou consignes) : à voir sur le site'] }, changeV: increment(1) } : {};
+  await updateDoc(doc(db, 'sessions', s.id), { info: clean, infoVersion: increment(1), infoAt: serverTimestamp(), needsInfo: deleteField(), ...ch });
   await log('session_info', actor, s.title, { lieu: clean.place || '—', distanciel: clean.visio || '—', consignes: clean.note || '—' });
 }
 

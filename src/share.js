@@ -50,6 +50,17 @@ export function sessionMessage(s) {
   ].join('\n'));
 }
 
+// Modification d'un sondage / d'une séance
+export function changeMessage(kind, x, list) {
+  const when = kind === 'session' ? ` (${day(x.date)} · ${fmt(x.s)}-${fmt(x.e)})` : '';
+  return clean([
+    `🔄 *MODIF ${kind === 'session' ? 'séance' : 'sondage'} : ${x.title}*${when}`,
+    ...list,
+    '',
+    kind === 'session' ? `👉 Vérifie que ça te va toujours : ${deepLink('session', x.id)}` : `👉 Vérifie ton vote : ${deepLink('poll', x.id)}`,
+  ].join('\n'));
+}
+
 // Lien officiel direct (le raccourci wa.me abîme les émojis pendant sa redirection, surtout sur PC)
 export function shareWhatsApp(text) {
   window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
@@ -81,6 +92,7 @@ export function reminderMessage(s, { withInfo = false } = {}) {
   if (withInfo && s.info?.note) lines.push(`📝 ${s.info.note.replace(/\n+/g, ' · ')}`);
   lines.push(`👥 ${placesLabel(s)}`);
   if (s.announce?.text) lines.push(`📣 ${s.announce.text}`);
+  if (s.lastChange?.at && Date.now() - s.lastChange.at < 7 * 86400000) lines.push('', '🔄 *Attention, modifié récemment :*', ...s.lastChange.list);
   lines.push('', `👉 Plus dispo ? Pas encore inscrit ? C’est ici : ${deepLink('session', s.id)}`);
   return clean(lines.join('\n'));
 }

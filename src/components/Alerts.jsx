@@ -12,6 +12,7 @@ import { hiddenId } from '../testmode';
 import { hasInfo, InfoLines } from './SessionInfo';
 import { ConfirmButton } from './ui';
 import { deadlineLabel } from '../autoclose';
+import { ackChange, changeSeen, plain, recentChange } from '../changes';
 
 const readList = (k) => { try { return JSON.parse(ls.get(k) || '[]'); } catch { return []; } };
 
@@ -143,7 +144,7 @@ function SessionLine({ s, people, me, onOpen, compact }) {
       <button className="al-sess-main" onClick={() => onOpen(s)}>
         {freed && <span className="al-freed">Une place s'est libérée !</span>}
         {s.cancelled && <span className="al-cancel">Séance annulée</span>}
-        <span className="al-day">{dayLabel(s.date)}{compact && <span className="al-time"> · {fmt(s.s)}–{fmt(s.e)}</span>}</span>
+        <span className="al-day">{dayLabel(s.date)}{compact && <span className="al-time"> · {fmt(s.s)}–{fmt(s.e)}</span>}{recentChange(s) && !s.cancelled && <span className="al-mod" title={recentChange(s).list.map(plain).join(' · ')}>🔄 modifiée</span>}</span>
         <b>{s.title}</b>
         {!compact && <span className="muted tiny"><Clock size={12} /> {fmt(s.s)}–{fmt(s.e)}{s.place ? <> · <MapPin size={12} /> {s.place}</> : ''}</span>}
         {!compact && <AvatarStack people={att} max={6} size={22} label={placesLabel(s)} />}
@@ -182,6 +183,39 @@ function useInfos(sessions, meId) {
   }, []);
   return useMemo(() => infoFor(sessions, meId), [sessions, meId, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 }
+// Modifications (horaire, lieu…) d'une séance où je suis / d'un sondage où j'ai voté
+const infoOnly = (c) => c.list.every((l) => l.startsWith('ℹ️'));
+function useChanges(sessions, polls, me) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const f = () => setTick((t) => t + 1); window.addEventListener('ge-cancel-seen', f); return () => window.removeEventListener('ge-cancel-seen', f); }, []);
+  const name = `${me.prenom} ${me.nom || ''}`.trim();
+  return useMemo(() => [
+    ...(sessions || []).filter((s) => {
+      const c = recentChange(s);
+      if (!c || s.cancelled || isPast(s.date, s.e) || s.createdBy === me.id || c.by === name || infoOnly(c) || changeSeen(s)) return false;
+      const st = sessionState(s, me.id);
+      return st.status !== 'out' || st.waiting || isMaybe(s, polls, me.id);
+    }).map((s) => ({ kind: 'session', item: s })),
+    ...(polls || []).filter((p) => { const c = recentChange(p); return c && isOpenPoll(p) && p.createdBy !== me.id && c.by !== name && p.votes?.[me.id] && !changeSeen(p); }).map((p) => ({ kind: 'poll', item: p })),
+  ], [sessions, polls, me.id, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+export function ChangeCard({ x, onOpen }) {
+  const it = x.item;
+  return (
+    <div className="al-card al-c-chg">
+      <div className="grow">
+        <span className="al-chg-tag">🔄 {x.kind === 'poll' ? 'Sondage modifié' : 'Séance modifiée'}</span>
+        <button className="al-sess-main" onClick={onOpen}>
+          <b>{it.title}</b>
+          {x.kind === 'session' && <span className="muted tiny">{dayLabel(it.date)} · {fmt(it.s)}–{fmt(it.e)}</span>}
+        </button>
+        <ul className="chg-list">{it.lastChange.list.map((l, i) => <li key={i}>{plain(l)}</li>)}</ul>
+      </div>
+      <button className="btn small" onClick={() => ackChange(it)}><Check size={14} /> Vu</button>
+    </div>
+  );
+}
+
 export function AnnounceCard({ s, onOpen }) {
   return (
     <div className="al-card al-c-ann">
@@ -227,6 +261,7 @@ export function InfoCard({ s, onOpen }) {
 */
 function useAlerts(sessions, polls, me) {
   const infos = useInfos(sessions, me.id);
+  const changes = useChanges(sessions, polls, me);
   const cancelled = useCancelled(sessions, polls, me.id);
   // Invitations (sondages / séances privés) pas encore vues
   const invSeen = readList('ge_inv_seen');
@@ -247,7 +282,7 @@ function useAlerts(sessions, polls, me) {
 
   const [pendingPolls, hidePoll, openPolls] = usePendingPolls(polls, me.id);
   const votedPolls = openPolls.filter((p) => p.votes?.[me.id]);
-  return { remindToday, invites, infos, anns, cancelled, cancelledPolls, freed, toConfirm, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
+  return { remindToday, invites, infos, changes, anns, cancelled, cancelledPolls, freed, toConfirm, decisions, reminders, pendingPolls, votedPolls, openPolls, hidePoll };
 }
 
 // Ligne compacte : titre + 1 ligne d'info + bouton
@@ -275,7 +310,7 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
 
   useEffect(() => {
     if (skip) return;
-    if (supportNew || a.remindToday.length || a.invites.length || a.infos.length || a.anns.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
+    if (supportNew || a.remindToday.length || a.invites.length || a.infos.length || a.changes.length || a.anns.length || a.cancelled.length || a.cancelledPolls.length) { setOpen(true); return; } // priorités 1 et 2 : toujours tant que pas « Compris »
     const showRem = (a.freed.length || a.toConfirm.length || a.decisions.length || a.reminders.length) && ss.get(remKey) !== '1';
     const showPolls = a.openPolls.length > 0 && ss.get('ge_polls_later') !== '1';
     const showChat = unread > 0 && ss.get('ge_chat_seen') !== '1';
@@ -313,6 +348,11 @@ export function AlertsPopup({ sessions, polls, people, me, onSession, onGoPolls,
       {a.infos.length > 0 && (
         <Section title="Infos importantes" cls="prio">
           {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={openS} />)}
+        </Section>
+      )}
+      {a.changes.length > 0 && (
+        <Section title="Modifications" cls="prio">
+          {a.changes.map((x) => <ChangeCard key={x.item.id} x={x} onOpen={() => { close(); if (x.kind === 'poll') onGoPolls(x.item.id); else onSession(x.item); }} />)}
         </Section>
       )}
       {a.anns.length > 0 && (
@@ -371,7 +411,7 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, u
   const a = useAlerts(sessions, polls, me);
   const [closedRem, setClosedRem] = useState(() => ss.get('ge_bar_rem') === '1');
   const sessLines = [...a.freed, ...(closedRem ? [] : a.reminders)];
-  if (!a.remindToday.length && !a.invites.length && !supportNew && !a.infos.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
+  if (!a.remindToday.length && !a.invites.length && !supportNew && !a.infos.length && !a.changes.length && !a.anns.length && !a.cancelled.length && !a.cancelledPolls.length && !a.toConfirm.length && !a.decisions.length && !sessLines.length && !a.openPolls.length && !unread) return null;
   return (
     <div className="al-bar">
       {supportNew > 0 && (
@@ -382,6 +422,7 @@ export function AlertsBar({ sessions, polls, people, me, onSession, onGoPolls, u
       {a.remindToday.map((s) => <RemindCard key={s.id} s={s} onOpen={onSession} />)}
       {a.invites.map((x) => <InviteCard key={x.item.id} x={x} onOpen={() => (x.kind === 'poll' ? onGoPolls(x.item.id) : onSession(x.item))} />)}
       {a.infos.map((s) => <InfoCard key={s.id} s={s} onOpen={onSession} />)}
+      {a.changes.map((x) => <ChangeCard key={x.item.id} x={x} onOpen={() => (x.kind === 'poll' ? onGoPolls(x.item.id) : onSession(x.item))} />)}
       {a.anns.map((s) => <AnnounceCard key={s.id} s={s} onOpen={onSession} />)}
       {unread > 0 && (
         <button className="al-card al-c-chat" onClick={() => openChat('')}>

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Info, Lock, MapPin, MonitorSmartphone, Pencil, Save } from 'lucide-react';
 import { saveSessionInfo } from '../data';
+import { ChangedDone } from './WaButton';
+import { changeMessage, shareWhatsApp } from '../share';
 
 export const hasInfo = (s) => !!(s?.info && (s.info.place || s.info.visio || s.info.note));
 const needsPlace = (format) => format !== 'visio';      // présentiel ou hybride
@@ -27,6 +29,7 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
   const [visio, setVisio] = useState(s.info?.visio || '');
   const [note, setNote] = useState(s.info?.note || '');
   const [busy, setBusy] = useState(false);
+  const [changed, setChanged] = useState(null);
   const canSeeInfo = isAttendee || canManage;
   const fmt = s.format || 'hybride';
 
@@ -49,7 +52,15 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
         </label>
         <div className="row-btns">
           <button className="btn ghost" onClick={() => setEdit(false)}>Annuler</button>
-          <button className="btn primary" disabled={busy} onClick={async () => { setBusy(true); await saveSessionInfo(s, { place, visio, note }, actor); setBusy(false); setEdit(false); }}>
+          <button className="btn primary" disabled={busy} onClick={async () => {
+            setBusy(true);
+            const o = s.info || {};
+            const was = o.place || o.visio || o.note;
+            const diff = was && ((o.place || '') !== place.trim() || (o.visio || '') !== visio.trim() || (o.note || '') !== note.trim());
+            await saveSessionInfo(s, { place, visio, note }, actor);
+            setBusy(false); setEdit(false);
+            if (diff) setChanged(['ℹ️ Infos importantes modifiées (lieu, lien ou consignes) : à voir sur le site']);
+          }}>
             <Save size={15} /> Enregistrer et prévenir les inscrits
           </button>
         </div>
@@ -57,6 +68,7 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
     );
   }
 
+  if (changed) return <ChangedDone list={changed} onShare={() => shareWhatsApp(changeMessage('session', s, changed))} onClose={() => setChanged(null)} />;
   if (!canSeeInfo) {
     return hasInfo(s) ? <p className="info-locked"><Lock size={14} /> Des infos pratiques (lieu, lien…) sont réservées aux inscrits.</p> : null;
   }

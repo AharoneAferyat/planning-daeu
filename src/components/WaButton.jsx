@@ -32,3 +32,17 @@ export function SharedDone({ title, item, onShare, onClose }) {
     </Modal>
   );
 }
+
+// Après une modification : prévenir le groupe sur WhatsApp
+export function ChangedDone({ list, onShare, onClose }) {
+  return (
+    <Modal title={<><Check size={18} /> Modification enregistrée</>} onClose={onClose}
+      footer={<>
+        <button className="btn ghost" onClick={onClose}>Pas besoin</button>
+        <button className="btn wa-btn grow" onClick={() => { onShare(); onClose(); }}><WaIcon /> Prévenir sur WhatsApp</button>
+      </>}>
+      <ul className="chg-list">{list.map((l, i) => <li key={i}>{l.replace(/\*/g, '')}</li>)}</ul>
+      <p className="muted tiny">Les personnes concernées le verront aussi dans leurs rappels sur le site. Le message WhatsApp « 🔄 MODIF » est déjà rédigé.</p>
+    </Modal>
+  );
+}

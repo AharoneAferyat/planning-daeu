@@ -56,11 +56,11 @@ function layout({ hello, title, lines, info, cta, site, link }) {
 <p>${esc(hello)}</p>
 <h2 style="font-size:18px;margin:10px 0">${title}</h2>
 ${rows}${infoHtml}
-<p style="margin:18px 0"><a href="${esc(link)}" style="background:#4F46E5;color:#fff;text-decoration:none;padding:10px 16px;border-radius:10px;font-weight:bold;display:inline-block">${esc(cta)}</a></p>
-<p style="color:#64748B;font-size:12px">Mail automatique du site Groupes d'étude (${esc(site)}). Pour ne plus en recevoir : retire ton adresse mail sur le site (crayon ✏️ « Mes dispos »).</p>
+<p style="margin:16px 0">${esc(cta)} : <a href="${esc(link)}">${esc(link)}</a></p>
+<p style="color:#64748B;font-size:12px">Mail automatique du site Groupes d'étude, envoyé parce que tu as donné ton adresse pour les rappels. Ajoute cette adresse à tes contacts pour ne pas rater les prochains. Pour ne plus en recevoir : retire ton adresse sur le site (crayon « Mes dispos »).</p>
 </div>`;
   const strip = (h) => h.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-  const text = [hello, '', strip(title), ...lines.map(strip), ...(info || []).map(strip), '', `${cta} : ${link}`, '', `Pour ne plus recevoir ces mails : retire ton adresse sur le site (crayon ✏️ « Mes dispos »).`].join('\n');
+  const text = [hello, '', strip(title), ...lines.map(strip), ...(info || []).map(strip), '', `${cta} : ${link}`, '', `Mail automatique du site Groupes d'étude. Ajoute cette adresse à tes contacts pour ne pas rater les prochains. Pour ne plus en recevoir : retire ton adresse sur le site (crayon « Mes dispos »).`].join('\n');
   return { html, text };
 }
 
@@ -79,7 +79,7 @@ export function createdMails(s, people, site) {
   const link = `${site}/?seance=${s.id}`;
   const out = [];
   for (const p of withMail(s.attendees || [], people)) {
-    out.push({ to: p.email, subject: `✅ Séance confirmée : ${s.title} — ${when(s)}`, ...layout({
+    out.push({ to: p.email, subject: `Séance confirmée : ${s.title} — ${when(s)}`, ...layout({
       hello: `Salut ${p.prenom},`, title: `✅ ${esc(s.title)}${esc(subj(s))} : c’est confirmé !`, site, link, cta: 'Voir la séance',
       lines: [`📅 <b>${esc(when(s))}</b>`, modeLine(s, p.id), 'Tu avais voté « Oui » : tu es inscrit(e). Plus dispo ? Désinscris-toi sur le site pour laisser ta place.'],
       info: infoLines(s),
@@ -88,13 +88,13 @@ export function createdMails(s, people, site) {
   (s.waitlist || []).forEach((id, i) => {
     const [p] = withMail([id], people);
     if (!p || (s.attendees || []).includes(id)) return;
-    out.push({ to: p.email, subject: `⏳ Liste d’attente : ${s.title} — ${when(s)}`, ...layout({
+    out.push({ to: p.email, subject: `Liste d’attente : ${s.title} — ${when(s)}`, ...layout({
       hello: `Salut ${p.prenom},`, title: `⏳ ${esc(s.title)} : tu es en liste d’attente (n°${i + 1})`, site, link, cta: 'Voir la séance',
       lines: [`📅 <b>${esc(when(s))}</b>`, 'La séance est complète pour l’instant. Si une place se libère, tu recevras un mail.'],
     }) });
   });
   for (const p of withMail((s.maybes || []).filter((id) => !(s.attendees || []).includes(id) && !(s.waitlist || []).includes(id)), people)) {
-    out.push({ to: p.email, subject: `❓ Tu viens ? ${s.title} — ${when(s)}`, ...layout({
+    out.push({ to: p.email, subject: `Tu viens ? ${s.title} — ${when(s)}`, ...layout({
       hello: `Salut ${p.prenom},`, title: `❓ ${esc(s.title)} : la date est fixée`, site, link, cta: 'Je confirme ou non',
       lines: [`📅 <b>${esc(when(s))}</b>`, 'Tu avais répondu « Peut-être ». Dis-nous si tu viens (les infos pratiques s’affichent une fois inscrit).'],
     }) });
@@ -105,8 +105,8 @@ export function createdMails(s, people, site) {
 // Rappel la veille : inscrits
 export function reminderMails(s, people, site) {
   const link = `${site}/?seance=${s.id}`;
-  return withMail(s.attendees || [], people).map((p) => ({ to: p.email, subject: `⏰ Rappel : ${s.title} — ${when(s)}`, ...layout({
-    hello: `Salut ${p.prenom},`, title: `⏰ Rappel : ${esc(s.title)}${esc(subj(s))}`, site, link, cta: 'Voir la séance',
+  return withMail(s.attendees || [], people).map((p) => ({ to: p.email, subject: `Rappel : ${s.title} — ${when(s)}`, ...layout({
+    hello: `Salut ${p.prenom},`, title: `Rappel : ${esc(s.title)}${esc(subj(s))}`, site, link, cta: 'Voir la séance',
     lines: [`📅 <b>${esc(when(s))}</b>`, modeLine(s, p.id),
       ...(s.lastChange?.at && Date.now() - s.lastChange.at < 7 * 86400000 ? ['🔄 <b>Modifiée récemment :</b> ' + s.lastChange.list.map((l) => esc(l.replace(/\*/g, ''))).join(' · ')] : []),
       ...(s.announce?.text ? [`📣 ${esc(s.announce.text)}`] : []),
@@ -119,7 +119,7 @@ export function reminderMails(s, people, site) {
 export function freedMails(s, people, site) {
   const link = `${site}/?seance=${s.id}`;
   const n = freePlaces(s);
-  return withMail((s.waitlist || []).filter((id) => !(s.attendees || []).includes(id) || isVisio(s, id)), people).map((p) => ({ to: p.email, subject: `🎉 Place libérée : ${s.title} — ${when(s)}`, ...layout({
+  return withMail((s.waitlist || []).filter((id) => !(s.attendees || []).includes(id) || isVisio(s, id)), people).map((p) => ({ to: p.email, subject: `Place libérée : ${s.title} — ${when(s)}`, ...layout({
     hello: `Salut ${p.prenom},`, title: `🎉 ${n > 1 ? `${n} places se sont libérées` : 'Une place s’est libérée'} : ${esc(s.title)}`, site, link, cta: 'Je prends la place',
     lines: [`📅 <b>${esc(when(s))}</b>`, 'Tu étais en liste d’attente. <b>Premier arrivé, premier servi</b> : va vite sur le site pour la prendre.'],
   }) }));
@@ -129,7 +129,7 @@ export function freedMails(s, people, site) {
 export function updateMails(s, people, site) {
   const link = `${site}/?seance=${s.id}`;
   const recent = s.lastChange?.at && Date.now() - s.lastChange.at < 7 * 86400000 ? s.lastChange.list.map((l) => esc(l.replace(/\*/g, ''))) : [];
-  const out = withMail(s.attendees || [], people).map((p) => ({ to: p.email, subject: `🔄 Mise à jour : ${s.title} — ${when(s)}`, ...layout({
+  const out = withMail(s.attendees || [], people).map((p) => ({ to: p.email, subject: `Mise à jour : ${s.title} — ${when(s)}`, ...layout({
     hello: `Salut ${p.prenom},`, title: `🔄 ${esc(s.title)}${esc(subj(s))} : mise à jour`, site, link, cta: 'Voir la séance',
     lines: [`📅 <b>${esc(when(s))}</b>`, modeLine(s, p.id), ...recent, 'Plus dispo ? Désinscris-toi sur le site pour laisser ta place.'],
     info: infoLines(s),
@@ -137,7 +137,7 @@ export function updateMails(s, people, site) {
   const wait = (s.waitlist || []).filter((id) => !(s.attendees || []).includes(id));
   if (recent.length) {
     for (const p of withMail(wait, people)) {
-      out.push({ to: p.email, subject: `🔄 Mise à jour : ${s.title} — ${when(s)}`, ...layout({
+      out.push({ to: p.email, subject: `Mise à jour : ${s.title} — ${when(s)}`, ...layout({
         hello: `Salut ${p.prenom},`, title: `🔄 ${esc(s.title)} : mise à jour`, site, link, cta: 'Voir la séance',
         lines: [`📅 <b>${esc(when(s))}</b>`, ...recent, 'Tu es toujours en liste d’attente.'],
       }) });

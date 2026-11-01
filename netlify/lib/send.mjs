@@ -25,7 +25,8 @@ async function sendAll(mails) {
   let ok = 0;
   for (const m of mails) {
     try {
-      await mailer().sendMail({ from: `"Groupes d'étude" <${process.env.GMAIL_USER}>`, to: m.to, subject: m.subject, text: m.text, html: m.html });
+      await mailer().sendMail({ from: `"Groupes d'étude DAEU" <${process.env.GMAIL_USER}>`, to: m.to, replyTo: process.env.GMAIL_USER, subject: m.subject, text: m.text, html: m.html,
+        list: { unsubscribe: { url: `mailto:${process.env.GMAIL_USER}?subject=stop`, comment: 'Ne plus recevoir' } } });
       ok++;
     } catch (e) { console.error('mail', m.to, e.message); }
   }

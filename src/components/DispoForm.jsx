@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Copy, Plus, Trash2, UserCheck } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, MOMENTS, PALETTE, PRESETS } from '../constants';
 import { createParticipant, deleteParticipant, log, pinData, saveEmail, updateParticipant } from '../data';
+import { MAIL_FROM } from '../config';
 import { capName, diffParticipant, momentsOf, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
 import { Chips, ConfirmButton, FormatIcon, MOMENT_ICON, Modal } from './ui';
 import { PinInput } from './AccessScreens';
@@ -216,7 +217,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
           {hadMail && !dropMail && <small className="ok-txt">✅ Adresse enregistrée (masquée, personne ne peut la lire sur le site). Tape une nouvelle adresse pour la remplacer. <button type="button" className="link tiny" onClick={() => { setDropMail(true); setEmail(''); }}>Ne plus recevoir de mails</button></small>}
           {dropMail && <small className="muted">Ton adresse sera effacée à l’enregistrement. <button type="button" className="link tiny" onClick={() => setDropMail(false)}>Annuler</button></small>}
           {!dropMail && <input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={hadMail ? 'nouvelle adresse (facultatif)' : 'prenom.nom@exemple.fr'} />}
-          <small className="muted">Confirmation de séance, rappel la veille, place libérée en liste d’attente. Sans adresse : redouble de vigilance sur le site et WhatsApp.</small>
+          <small className="muted">Confirmation de séance, rappel la veille, place libérée en liste d’attente. Les mails viennent de <b>{MAIL_FROM}</b> : ajoute-la à tes contacts (et « Non spam » si besoin). Sans adresse : redouble de vigilance sur le site et WhatsApp.</small>
         </div>
       </section>
 

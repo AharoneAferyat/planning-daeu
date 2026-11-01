@@ -5,6 +5,7 @@ import { formationsOf, FORMATIONS, isHybridCombo, presCourseSubjects, SUBJECTS }
 import FormationPick from './FormationPick';
 import PresCoursesPick from './PresCoursesPick';
 import { Chips, Modal } from './ui';
+import { MAIL_FROM } from '../config';
 
 /*
   MISES À JOUR OBLIGATOIRES DU PROFIL
@@ -63,6 +64,7 @@ STEPS.push({
       </ul>
       <input type="email" inputMode="email" autoComplete="email" value={d.email || ''} onChange={(e) => set({ email: e.target.value })} placeholder="prenom.nom@exemple.fr" />
       {d.email && !validEmail(d.email) && <small className="err">Adresse incomplète.</small>}
+      {validEmail(d.email) && <small className="ok-txt">📌 Ajoute <b>{MAIL_FROM}</b> à tes contacts. Si le 1er mail arrive dans les spams, clique « Non spam » : les suivants arriveront normalement.</small>}
       <small className="muted">Pas obligatoire : laisse vide si tu préfères. Dans ce cas, <b>redouble de vigilance</b> : tu n’auras aucun rappel en dehors du site et du groupe WhatsApp. Tu pourras l’ajouter plus tard avec le crayon ✏️ (Mes dispos).</small>
     </div>
   ),

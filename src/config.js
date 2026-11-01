@@ -1,3 +1,5 @@
+// Adresse qui envoie les mails automatiques (affichée pour l'ajouter aux contacts)
+export const MAIL_FROM = 'groupes.daeu@gmail.com';
 // PIN admin utilisé tant qu'aucun PIN n'a été défini dans Admin → Réglages.
 // Change-le dès la première connexion.
 export const DEFAULT_ADMIN_PIN = '1234';

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Info, Lock, MapPin, MonitorSmartphone, Pencil, Save } from 'lucide-react';
-import { saveSessionInfo } from '../data';
+import { mailEvent, saveSessionInfo } from '../data';
+import { mailCount } from '../changes';
 import { ChangedDone } from './WaButton';
 import { changeMessage, shareWhatsApp } from '../share';
 
@@ -23,7 +24,7 @@ export function InfoLines({ info, compact }) {
 }
 
 // Bloc dans la fiche de séance : visible des inscrits, modifiable par le créateur / l'admin
-export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
+export default function SessionInfoBlock({ s, people, canManage, isAttendee, actor }) {
   const [edit, setEdit] = useState(false);
   const [place, setPlace] = useState(s.info?.place || '');
   const [visio, setVisio] = useState(s.info?.visio || '');
@@ -59,7 +60,8 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
             const diff = was && ((o.place || '') !== place.trim() || (o.visio || '') !== visio.trim() || (o.note || '') !== note.trim());
             await saveSessionInfo(s, { place, visio, note }, actor);
             setBusy(false); setEdit(false);
-            if (diff) setChanged(['ℹ️ Infos importantes modifiées (lieu, lien ou consignes) : à voir sur le site']);
+            if (diff) setChanged({ title: 'Modification enregistrée', list: ['ℹ️ Infos importantes modifiées (lieu, lien ou consignes) : à voir sur le site'] });
+            else if (!was && (place.trim() || visio.trim() || note.trim())) setChanged({ title: 'Infos enregistrées', list: ['ℹ️ Infos importantes ajoutées (lieu, lien ou consignes) : à voir sur le site'] });
           }}>
             <Save size={15} /> Enregistrer et prévenir les inscrits
           </button>
@@ -68,7 +70,8 @@ export default function SessionInfoBlock({ s, canManage, isAttendee, actor }) {
     );
   }
 
-  if (changed) return <ChangedDone list={changed} onShare={() => shareWhatsApp(changeMessage('session', s, changed))} onClose={() => setChanged(null)} />;
+  if (changed) return <ChangedDone title={changed.title} list={changed.list} onShare={() => shareWhatsApp(changeMessage('session', s, changed.list))} onClose={() => setChanged(null)}
+    onMail={() => mailEvent('update', s.id)} mailCount={mailCount(s, people)} />;
   if (!canSeeInfo) {
     return hasInfo(s) ? <p className="info-locked"><Lock size={14} /> Des infos pratiques (lieu, lien…) sont réservées aux inscrits.</p> : null;
   }

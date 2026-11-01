@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import { log, updateParticipant } from '../data';
+import { log, saveEmail, updateParticipant } from '../data';
 import { formationsOf, FORMATIONS, isHybridCombo, presCourseSubjects, SUBJECTS } from '../formations';
 import FormationPick from './FormationPick';
 import PresCoursesPick from './PresCoursesPick';
@@ -48,10 +48,32 @@ const STEPS = [
   },
 ];
 
+export const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(e || '').trim());
+STEPS.push({
+  id: 'email',
+  title: 'Rappels par mail (facultatif)',
+  needs: (p) => !p.emailAsked && !p.hasEmail,
+  render: (d, set) => (
+    <div className="field">
+      <span>Ton adresse mail, pour recevoir automatiquement :</span>
+      <ul className="pu-list">
+        <li>✅ la confirmation quand un sondage où tu as voté devient une séance</li>
+        <li>⏰ un rappel la veille de tes séances</li>
+        <li>🎉 un mail si une place se libère alors que tu es en liste d’attente</li>
+      </ul>
+      <input type="email" inputMode="email" autoComplete="email" value={d.email || ''} onChange={(e) => set({ email: e.target.value })} placeholder="prenom.nom@exemple.fr" />
+      {d.email && !validEmail(d.email) && <small className="err">Adresse incomplète.</small>}
+      <small className="muted">Pas obligatoire : laisse vide si tu préfères. Dans ce cas, <b>redouble de vigilance</b> : tu n’auras aucun rappel en dehors du site et du groupe WhatsApp. Tu pourras l’ajouter plus tard avec le crayon ✏️ (Mes dispos).</small>
+    </div>
+  ),
+  valid: (d) => !d.email || validEmail(d.email),
+  patch: () => ({ emailAsked: true }),
+});
+
 export const pendingSteps = (me, settings) => (!me || me.id === 'admin' ? [] : STEPS.filter((s) => s.needs(me, settings)));
 
 export default function ProfileUpdate({ me, settings, onDone }) {
-  const [draft, setDraft] = useState(() => ({ ...me, formations: formationsOf(me), subjects: me.subjects || [] }));
+  const [draft, setDraft] = useState(() => ({ ...me, email: '', formations: formationsOf(me), subjects: me.subjects || [] }));
   const [busy, setBusy] = useState(false);
   const first = useMemo(() => pendingSteps(me, settings).map((s) => s.id), []); // eslint-disable-line react-hooks/exhaustive-deps
   // Étapes affichées : celles qui manquaient à l'ouverture + celles que les réponses rendent nécessaires (ex. Hybride + Soir coché)
@@ -67,10 +89,14 @@ export default function ProfileUpdate({ me, settings, onDone }) {
   const save = async () => {
     setBusy(true);
     const patch = Object.assign({}, ...shown.map((s) => s.patch(draft, settings)));
+    const mailStep = shown.some((s) => s.id === 'email');
+    delete patch.email;
     await updateParticipant(me.id, patch);
+    if (mailStep) await saveEmail(me.id, validEmail(draft.email) ? draft.email : '');
     await log('participant_update', who, who, { changes: [
       ...(patch.formations ? [{ field: 'Formation', from: '—', to: patch.formations.map((f) => FORMATIONS[f].label).join(' + ') }] : []),
       ...(patch.subjects ? [{ field: 'Matières', from: '—', to: patch.subjects.length ? patch.subjects.map((s) => SUBJECTS[s].label).join(', ') : 'toutes' }] : []),
+      ...(mailStep ? [{ field: 'Mail (rappels)', from: '—', to: validEmail(draft.email) ? 'enregistré (masqué)' : 'refusé' }] : []),
       ...(patch.presSubjects ? [{ field: 'Cours en présentiel', from: '—', to: patch.presSubjects.length ? patch.presSubjects.map((s) => SUBJECTS[s].label).join(', ') : 'aucun (tout en hybride)' }] : []),
     ] });
     setBusy(false);

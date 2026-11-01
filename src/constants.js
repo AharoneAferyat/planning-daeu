@@ -95,6 +95,8 @@ export const LOG_TYPES = {
   invite_refused: 'Code refusé',
   admin_login: 'Connexion admin',
   admin_login_fail: 'PIN admin erroné',
+  admin_emails: 'Adresses mail affichées (admin)',
+  admin_emails_fail: 'Code des adresses mail erroné',
   settings_update: 'Réglages',
   data_reset: 'Remise à zéro',
 };

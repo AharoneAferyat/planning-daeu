@@ -1,4 +1,5 @@
 import { Check, Send } from 'lucide-react';
+import { useState } from 'react';
 import { Modal } from './ui';
 
 // Logo WhatsApp simplifié (bulle + combiné), en SVG inline
@@ -34,15 +35,20 @@ export function SharedDone({ title, item, onShare, onClose }) {
 }
 
 // Après une modification : prévenir le groupe sur WhatsApp
-export function ChangedDone({ list, onShare, onClose }) {
+// onMail : envoyer la mise à jour par mail aux inscrits (séances seulement, à la demande : pas de mail à chaque retouche)
+export function ChangedDone({ list, onShare, onClose, onMail, mailCount = 0, title = 'Modification enregistrée' }) {
+  const [mailed, setMailed] = useState(false);
   return (
-    <Modal title={<><Check size={18} /> Modification enregistrée</>} onClose={onClose}
+    <Modal title={<><Check size={18} /> {title}</>} onClose={onClose}
       footer={<>
         <button className="btn ghost" onClick={onClose}>Pas besoin</button>
         <button className="btn wa-btn grow" onClick={() => { onShare(); onClose(); }}><WaIcon /> Prévenir sur WhatsApp</button>
       </>}>
       <ul className="chg-list">{list.map((l, i) => <li key={i}>{l.replace(/\*/g, '')}</li>)}</ul>
       <p className="muted tiny">Les personnes concernées le verront aussi dans leurs rappels sur le site. Le message WhatsApp « 🔄 MODIF » est déjà rédigé.</p>
+      {onMail && mailCount > 0 && (mailed
+        ? <p className="mail-sent">📧 Mail envoyé ({mailCount} adresse{mailCount > 1 ? 's' : ''})</p>
+        : <button className="btn mail-btn" onClick={() => { onMail(); setMailed(true); }}>📧 Envoyer aussi par mail aux inscrits ({mailCount})</button>)}
     </Modal>
   );
 }

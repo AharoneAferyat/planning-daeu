@@ -5,7 +5,7 @@ import {
 import { arrayUnion } from 'firebase/firestore';
 import { SESSION_FORMATS, VOTE } from '../constants';
 import {
-  answerMaybe, cancelPoll, cancelSession, setPollMode, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
+  answerMaybe, cancelPoll, mailEvent, cancelSession, setPollMode, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
 import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
@@ -14,7 +14,7 @@ import { hiddenId } from '../testmode';
 import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfoSeen } from './SessionInfo';
 import { changeMessage, pollMessage, sessionMessage, shareWhatsApp } from '../share';
 import WaButton, { ChangedDone, SharedDone } from './WaButton';
-import { plain, pollDiff, recentChange, sessionDiff } from '../changes';
+import { mailCount, plain, pollDiff, recentChange, sessionDiff } from '../changes';
 
 const ChangeNote = ({ x }) => { const c = recentChange(x); return c ? <p className="chg-note"><b>🔄 Modifié {timeAgo(c.at)}</b> : {c.list.map(plain).join(' · ')}</p> : null; };
 import PollComments from './PollComments';
@@ -425,6 +425,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
   const [deadlineTime, setDeadlineTime] = useState(initial?.deadlineTime || '');
   const [autoClose, setAutoClose] = useState(initial?.id ? !!initial.autoClose : true);
   const [prep, setPrep] = useState(() => initial?.sessionInfo || {});
+  const [mailReminders, setMailReminders] = useState(initial?.mailReminders !== false);
   const [max, setMax] = useState(initial?.max || '');
   const [min, setMin] = useState(initial?.min || '');
   const [options, setOptions] = useState(() => initial?.options?.map((o) => ({ ...o, sh: toHHMM(o.s), eh: toHHMM(o.e) }))
@@ -463,7 +464,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
       if (!opts.some((o) => { const d = parseIso(o.date); d.setHours(0, o.s, 0, 0); return d.getTime() > dl; })) return setErr('La date limite doit tomber avant au moins une des dates proposées.');
     }
     const prepClean = { place: (prep.place || '').trim(), visio: (prep.visio || '').trim(), note: (prep.note || '').trim() };
-    const data = { deadlineTime: deadline ? deadlineTime || null : null, autoClose: !!deadline && autoClose, autoSkipped: null, autoClaim: null, sessionInfo: prepClean.place || prepClean.visio || prepClean.note ? prepClean : null, title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
+    const data = { mailReminders, deadlineTime: deadline ? deadlineTime || null : null, autoClose: !!deadline && autoClose, autoSkipped: null, autoClaim: null, sessionInfo: prepClean.place || prepClean.visio || prepClean.note ? prepClean : null, title: title.trim(), description: description.trim(), format, place: place.trim(), deadline: deadline || null, max: Number(max) || null, min: Number(min) || null, audience, subject: subject || null, respectSchedule, options: opts, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
     setBusy(true);
     try {
       if (isEdit) {
@@ -524,6 +525,7 @@ export function PollForm({ initial, prefill, people, me, onClose, settings, defa
       )}
       <SpotPickField me={me} settings={settings} slots={options.map((o) => ({ date: o.date, s: toMin(o.sh), e: toMin(o.eh) }))} value={spotId} onPick={(sp) => { setSpotId(sp?.id || null); if (sp) setPlace(sp.name); }} />
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} />
+      <MailCheck poll value={mailReminders} onChange={setMailReminders} />
       {(canUseSpots(me, settings) || invite.private) && <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />}
       <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject} hideFormations={invite.private}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
@@ -619,7 +621,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <p className="muted tiny">Créée par {s.createdByName}{s.pollId ? ' via un sondage' : ''}</p>
       </div>
       {!st.cancelled && <ChangeNote x={s} />}
-      {!st.cancelled && <SessionInfoBlock s={s} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
+      {!st.cancelled && <SessionInfoBlock s={s} people={people} canManage={canManage} isAttendee={!!me && st.status === 'in'} actor={actor} />}
       <ReminderBox s={s} canManage={canManage} highlight={s.date <= isoDate(new Date(Date.now() + 86400000))} />
       <CreatorAttendance s={s} people={people} me={me} canManage={canManage} />
       <SessionChatBlock s={s} me={me} canManage={canManage} concerned={st.status !== 'out' || iMaybe} />
@@ -755,6 +757,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   const [note, setNote] = useState(base.note || '');
   const [attendees, setAttendees] = useState(base.attendees || (me && me.id !== 'admin' ? [me.id] : []));
   const [notify, setNotify] = useState(base.notify !== false);
+  const [mailReminders, setMailReminders] = useState(base.mailReminders !== false);
   const [max, setMax] = useState(base.max || '');
   const [min, setMin] = useState(base.min || '');
   const maxLocked = !!(isEdit && initial.pollId && initial.max && me?.id !== 'admin');
@@ -780,7 +783,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
     let att = [...attendees];
     let wait = (base.waitlist || []).filter((x) => !att.includes(x));
     if (m && att.length > m) { wait = [...att.slice(m), ...wait]; att = att.slice(0, m); }
-    const data = { title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify, audience, subject: subject || null, respectSchedule, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
+    const data = { mailReminders, title: title.trim(), date, s, e, format, place: place.trim(), note: note.trim(), attendees: att, waitlist: wait, max: m, min: Number(min) || null, notify, audience, subject: subject || null, respectSchedule, spotId: spotId || null, private: invite.private, invite: invite.private ? { ids: invite.ids, circles: invite.circles } : null };
     setBusy(true);
     try {
       if (isEdit) {
@@ -800,7 +803,8 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
   };
 
   return (
-    changed ? <ChangedDone list={changed.list} onShare={() => shareWhatsApp(changeMessage('session', changed.item, changed.list))} onClose={onClose} /> :
+    changed ? <ChangedDone list={changed.list} onShare={() => shareWhatsApp(changeMessage('session', changed.item, changed.list))} onClose={onClose}
+      onMail={() => mailEvent('update', initial.id)} mailCount={mailCount(changed.item, people, true)} /> :
     created ? <SharedDone title="Séance ajoutée au planning" item={created.title} onShare={() => shareWhatsApp(sessionMessage(created))} onClose={onClose} /> :
     <Modal wide title={isEdit ? 'Modifier la séance' : 'Planifier une séance'} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Annuler</button><button className="btn primary" disabled={busy} onClick={save}>{isEdit ? 'Enregistrer' : 'Ajouter au planning'}</button></>}>
@@ -823,6 +827,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
       <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
       {(conf.length > 0 || hol) && <p className="oe-warn"><ConflictPills conf={conf} hol={hol} /></p>}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />
+      <MailCheck value={mailReminders} onChange={setMailReminders} />
       {(canUseSpots(me, settings) || invite.private) && <InvitePicker value={invite} onChange={setInvite} people={people} me={me} />}
       <AudienceFields audience={audience} setAudience={setAudience} subject={subject} setSubject={setSubject} hideFormations={invite.private}
         respectSchedule={respectSchedule} setRespectSchedule={setRespectSchedule} />
@@ -844,6 +849,16 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
       </div>
       {err && <p className="err">{err}</p>}
     </Modal>
+  );
+}
+
+function MailCheck({ value, onChange, poll }) {
+  return (
+    <label className="switch notify-check">
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+      <span><b>📧 Mails automatiques</b><br />
+        <small className="muted">{poll ? 'Mail de confirmation quand le sondage devient une séance, ' : ''}rappel la veille aux inscrits, et mail à la liste d’attente si une place se libère (pour ceux qui ont donné leur adresse).</small></span>
+    </label>
   );
 }
 

@@ -1,10 +1,19 @@
 rules_version = '2';
 // Règles volontairement ouvertes : le site est partagé uniquement entre nous.
 // L'accès est filtré dans l'appli par les codes d'invitation, les PIN et le PIN admin.
+// EXCEPTION : les collections « private_… » ne sont pas lisibles depuis le site.
+// Adresses mail (private_emails) : le site peut seulement les écrire / les effacer.
+// Seules les fonctions Netlify (clé de service) les lisent : envoi des mails, et affichage pour l'admin avec son code secret.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+    match /{col}/{document=**} {
+      allow read, write: if !col.matches('private_.*');
+    }
+    match /private_emails/{id} {
+      allow read: if false;
+      allow create, update: if request.resource.data.keys().hasOnly(['email', 'at'])
+        && request.resource.data.email is string && request.resource.data.email.size() <= 120;
+      allow delete: if true;
     }
   }
 }

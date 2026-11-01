@@ -12,6 +12,7 @@ export default function AdminParticipants({ people, logs, polls, sessions, setti
   const [edit, setEdit] = useState(null); // participant | 'new'
   const [merge, setMerge] = useState(null);
   const [histo, setHisto] = useState(null);
+  const [emails, setEmails] = useState(null); // adresses affichées (en mémoire seulement, jusqu'à la fermeture de la page)
   const dups = useMemo(() => duplicatePairs(people), [people]);
 
   const list = useMemo(() => {
@@ -46,6 +47,8 @@ export default function AdminParticipants({ people, logs, polls, sessions, setti
           <p className="muted tiny">Si ce sont bien deux personnes différentes, ignore simplement l'alerte.</p>
         </div>
       )}
+
+      <MailsUnlock emails={emails} setEmails={setEmails} people={people} />
 
       <div className="toolbar">
         <div className="search grow"><Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher (nom, code…)" /></div>
@@ -82,6 +85,7 @@ export default function AdminParticipants({ people, logs, polls, sessions, setti
                 <span><em>Inscrit</em>{fmtDate(p.createdAt, false)}{p.createdByAdmin ? ' (admin)' : ''}</span>
                 <span><em>Dernière modif</em>{timeAgo(p.updatedAt)} · {p.updates || 0} modif(s)</span>
                 <span><em>Dernière visite</em>{timeAgo(p.lastSeenAt) || '—'}</span>
+                <span><em>Mail (rappels)</em>{emails?.[p.id] ? <span className="mono tiny">{emails[p.id]}</span> : p.hasEmail ? '✅ donné (masqué)' : p.emailAsked ? 'refusé' : 'pas encore demandé'}</span>
                 <span><em>Via le code</em><b className="mono">{p.viaCode || '—'}</b></span>
                 <span><em>Sondages votés</em>{st.votes}</span>
                 <span><em>Séances</em>{st.seances}</span>
@@ -95,6 +99,53 @@ export default function AdminParticipants({ people, logs, polls, sessions, setti
       {edit && <DispoForm admin settings={settings} existing={edit === 'new' ? null : edit} people={people} onClose={() => setEdit(null)} onSaved={() => setEdit(null)} />}
       {merge && <MergeModal {...merge} onClose={() => setMerge(null)} />}
       {histo && <HistoModal p={histo} logs={logs} onClose={() => setHisto(null)} />}
+    </div>
+  );
+}
+
+// Adresses mail : illisibles depuis le site ; l'admin les affiche avec le code secret rangé dans Netlify
+function MailsUnlock({ emails, setEmails, people }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const n = people.filter((p) => p.hasEmail).length;
+  if (!n) return null;
+  if (emails) {
+    const list = people.filter((p) => emails[p.id]).map((p) => emails[p.id]);
+    return (
+      <div className="card mails-card">
+        <b>📧 {list.length} adresse{list.length > 1 ? 's' : ''} affichée{list.length > 1 ? 's' : ''}</b>
+        <div className="row-btns">
+          <button className="btn small" onClick={() => { navigator.clipboard?.writeText(list.join(', ')); setCopied(true); }}>{copied ? 'Copié ✓' : 'Copier toutes les adresses'}</button>
+          <button className="btn small ghost" onClick={() => setEmails(null)}>Masquer</button>
+        </div>
+      </div>
+    );
+  }
+  const go = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr('');
+    try {
+      const r = await fetch('/.netlify/functions/admin-emails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setErr(j.error || 'Impossible de récupérer les adresses.');
+      else { setEmails(j.emails || {}); setOpen(false); }
+    } catch { setErr('Impossible de joindre le serveur.'); }
+    setBusy(false); setCode('');
+  };
+  return (
+    <div className="card mails-card">
+      <span>🔒 <b>{n} adresse{n > 1 ? 's' : ''} mail</b> enregistrée{n > 1 ? 's' : ''}, masquée{n > 1 ? 's' : ''} sur le site.</span>
+      {!open ? <button className="btn small" onClick={() => setOpen(true)}>Afficher</button> : (
+        <form className="mails-form" onSubmit={go}>
+          <input type="password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code secret des mails" autoFocus />
+          <button className="btn small primary" disabled={!code || busy}>{busy ? '…' : 'OK'}</button>
+        </form>
+      )}
+      {err && <p className="err">{err}</p>}
+      {open && <p className="muted tiny">C’est le code ADMIN_MAIL_CODE que tu as mis dans Netlify (différent du PIN admin). 5 erreurs = bloqué 15 min.</p>}
     </div>
   );
 }

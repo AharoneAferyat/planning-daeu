@@ -1289,3 +1289,13 @@ button.cat-info { display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
 .chg-note { font-size: 12.5px; color: var(--muted); margin: 4px 0; }
 .chg-note b { color: #0369A1; }
 [data-theme="dark"] .chg-note b { color: #7DD3FC; }
+.pu-list { margin: 4px 0 8px; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+.mail-btn { width: 100%; margin-top: 8px; justify-content: center; }
+.mail-sent { margin: 8px 0 0; font-size: 13.5px; font-weight: 700; color: #15803D; }
+[data-theme="dark"] .mail-sent { color: #4ADE80; }
+.ok-txt { display: block; font-size: 12.5px; color: #15803D; margin-bottom: 4px; } [data-theme="dark"] .ok-txt { color: #4ADE80; }
+.mails-card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; }
+.mails-card > span, .mails-card > b { flex: 1 1 200px; }
+.mails-form { display: flex; gap: 6px; flex: 1 1 100%; }
+.mails-form input { flex: 1; min-width: 0; }
+.mails-card .err, .mails-card .muted { flex-basis: 100%; margin: 0; }

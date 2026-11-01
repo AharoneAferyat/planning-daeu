@@ -7,7 +7,7 @@ import { db } from './firebase';
 import { DEFAULT_SETTINGS } from './config';
 import { fmt, fmtDayShort, newSalt, normalizeSlots, pinDigest, shortUA, toDate } from './utils';
 import { splitPlaces, yesByMode, yesOrder } from './places';
-import { inTestMode, TEST_ID } from './testmode';
+import { inTestMode, isReadOnly, TEST_ID } from './testmode';
 
 // ---------- Historique ----------
 export async function log(type, actor, target = '', details = {}) {
@@ -179,7 +179,16 @@ async function detachFromActivities(id, replaceBy = null) {
   }
 }
 
+// Adresse mail : rangée à part, illisible depuis le site (règles Firestore) ; la fiche garde seulement « hasEmail »
+export async function saveEmail(id, email, who) {
+  const e = String(email || '').trim().toLowerCase();
+  if (e) await setDoc(doc(db, 'private_emails', id), { email: e, at: Date.now() });
+  else await deleteDoc(doc(db, 'private_emails', id)).catch(() => {});
+  await updateDoc(doc(db, 'participants', id), { hasEmail: !!e, emailAsked: true, email: deleteField() });
+  if (who) await log('participant_update', who, who, { changes: [{ field: 'Mail (rappels)', from: '—', to: e ? 'enregistré (masqué)' : 'aucun' }] });
+}
 export async function deleteParticipant(p, actor) {
+  await deleteDoc(doc(db, 'private_emails', p.id)).catch(() => {});
   await detachFromActivities(p.id);
   await deleteDoc(doc(db, 'participants', p.id));
   await log('participant_delete', actor, `${p.prenom} ${p.nom || ''}`.trim(), { id: p.id });
@@ -233,6 +242,13 @@ export async function votePoll(poll, me, choices) {
   const resume = poll.options.map((o) => `${fmtDayShort(o.date)} ${fmt(o.s)} : ${choices[o.id] === 'yes' ? 'oui' : choices[o.id] === 'maybe' ? 'peut-être' : choices[o.id] === 'no' ? 'non' : '—'}`);
   await log('poll_vote', `${me.prenom} ${me.nom || ''}`.trim(), poll.title, { votes: resume });
 }
+// Mails automatiques (fonction Netlify) : séance créée depuis un sondage, place libérée
+export function mailEvent(type, id) {
+  try {
+    if (isReadOnly() || !id || /localhost|127\.0\.0\.1/.test(window.location.hostname)) return;
+    fetch('/.netlify/functions/mail-event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, id }), keepalive: true }).catch(() => {});
+  } catch { /* */ }
+}
 export async function closePoll(poll, option, extra, actor) {
   const max = Number(poll.max) || null; // fixé par le sondage
   const min = Number(poll.min) || null;
@@ -249,12 +265,14 @@ export async function closePoll(poll, option, extra, actor) {
     title: poll.title, date: option.date, s: option.s, e: option.e,
     format, modes, place: extra.place ?? poll.place ?? '', note: poll.description || '',
     notify: extra.notify !== false,
+    mailReminders: poll.mailReminders !== false,
     ...(extra.infoData || {}),
     ...(extra.needsInfo ? { needsInfo: true, autoCreated: true } : extra.auto ? { autoCreated: true } : {}),
     attendees, waitlist, maybes, max, min, spotId: extra.spotId ?? poll.spotId ?? null, audience: poll.audience || [], private: !!poll.private, invite: poll.invite || null, subject: poll.subject || null, respectSchedule: poll.respectSchedule !== false, pollId: poll.id, createdBy: poll.createdBy, createdByName: poll.createdByName, createdAt: serverTimestamp(),
   });
   await updateDoc(doc(db, 'polls', poll.id), { status: 'closed', finalOptionId: option.id, sessionId: sRef.id, closedAt: serverTimestamp(), ...(extra.auto ? { autoClosed: true } : {}) });
   await log('poll_close', actor, poll.title, { date: `${fmtDayShort(option.date)} ${fmt(option.s)}–${fmt(option.e)}`, inscrits: attendees.length, attente: waitlist.length, places: max || 'illimité' });
+  mailEvent('created', sRef.id);
   return sRef.id;
 }
 // ---------- Commentaires des sondages ----------
@@ -357,6 +375,7 @@ export async function joinSession(s, me, join, opts = {}) {
     return st;
   });
   if (status === 'cancelled') return status;
+  if (status === 'freed') mailEvent('freed', s.id);
   const who = `${me.prenom} ${me.nom || ''}`.trim();
   const date = `${fmtDayShort(s.date)} ${fmt(s.s)}`;
   if (status === 'in') await log('session_join', who, s.title, { date, mode: 'présentiel' });

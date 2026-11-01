@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarCheck, Save } from 'lucide-react';
 import { autoPick, dueAutoClose } from '../autoclose';
-import { cancelSession, claimAutoClose, closePoll, saveSessionInfo, skipAutoClose } from '../data';
+import { cancelSession, claimAutoClose, closePoll, mailEvent, saveSessionInfo, skipAutoClose } from '../data';
 import { isOver } from '../attendance';
 import { isReadOnly } from '../testmode';
 import { fmt, fmtDay } from '../utils';
@@ -50,6 +50,7 @@ function NeedsInfoForm({ s, me }) {
   const [info, setInfo] = useState(() => ({ place: s.info?.place || s.place || '', visio: s.info?.visio || '', note: s.info?.note || '' }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [mail, setMail] = useState(s.mailReminders !== false);
   const actor = me.id === 'admin' ? 'Admin' : `${me.prenom} ${me.nom || ''}`.trim();
   const n = (s.attendees || []).length;
   const save = async () => {
@@ -57,6 +58,7 @@ function NeedsInfoForm({ s, me }) {
     setBusy(true);
     await saveSessionInfo(s, info, actor);
     markInfoSeen(s.id);
+    if (mail) mailEvent('update', s.id);
     setBusy(false);
   };
   return (
@@ -67,6 +69,10 @@ function NeedsInfoForm({ s, me }) {
       {s.min > 0 && n < s.min && <p className="alert warn tiny">Seulement {n} inscrit{n > 1 ? 's' : ''} pour un minimum de {s.min}.</p>}
       <InfoFields required format={format} value={info} onChange={(v) => { setInfo(v); setErr(''); }} />
       {err && <p className="err">{err}</p>}
+      {s.mailReminders !== false && (
+        <label className="switch"><input type="checkbox" checked={mail} onChange={(e) => setMail(e.target.checked)} />
+          <span><b>📧 Envoyer ces infos par mail aux inscrits</b><br /><small className="muted">Ceux qui ont donné leur adresse ont déjà reçu la confirmation, sans les infos.</small></span></label>
+      )}
       <ConfirmButton className="link tiny danger" confirmText="Annuler la séance ? (les inscrits sont prévenus)" onConfirm={() => cancelSession(s, actor)}>Finalement, la séance n’a pas lieu</ConfirmButton>
     </Modal>
   );

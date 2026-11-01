@@ -52,3 +52,10 @@ export function ackChange(x) {
   ls.set(KEY, JSON.stringify([...new Set([...seenList(), changeKey(x)])].slice(-300)));
   window.dispatchEvent(new Event('ge-cancel-seen'));
 }
+
+// Nombre d'inscrits (et de personnes en attente si modif) qui recevront le mail
+export function mailCount(s, people, withWait = false) {
+  if (!s || s.mailReminders === false) return 0;
+  const ids = new Set([...(s.attendees || []), ...(withWait ? s.waitlist || [] : [])]);
+  return (people || []).filter((p) => ids.has(p.id) && p.hasEmail).length;
+}

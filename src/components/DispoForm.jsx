@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Copy, Plus, Trash2, UserCheck } from 'lucide-react';
 import { DAYS, DISTANCES, FORMATS, MOMENTS, PALETTE, PRESETS } from '../constants';
-import { createParticipant, deleteParticipant, log, pinData, updateParticipant } from '../data';
+import { createParticipant, deleteParticipant, log, pinData, saveEmail, updateParticipant } from '../data';
 import { capName, diffParticipant, momentsOf, findSimilar, fmt, nameKey, normalizeSlots, toHHMM, toMin } from '../utils';
 import { Chips, ConfirmButton, FormatIcon, MOMENT_ICON, Modal } from './ui';
 import { PinInput } from './AccessScreens';
@@ -27,6 +27,9 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
   const [format, setFormat] = useState(existing?.format || 'both');
   const [distance, setDistance] = useState(existing?.distance || 'moyen');
   const [note, setNote] = useState(existing?.note || '');
+  const [email, setEmail] = useState('');
+  const [dropMail, setDropMail] = useState(false);
+  const hadMail = !!existing?.hasEmail;
   const [days, setDays] = useState(() => {
     const o = emptyDays();
     (existing?.slots || []).forEach((s) => o[s.d].push({ s: toHHMM(s.s), e: toHHMM(s.e) }));
@@ -64,6 +67,7 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
       }
     }
     if (!slots.length) return setErr('Ajoute au moins un créneau de dispo.');
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setErr('L’adresse mail est incomplète (ou laisse-la vide).');
     const data = {
       prenom: P, nom: N, nameKey: nameKey(P, N), formations, formation: formations[0], subjects, ...(isHybridCombo({ formations }) ? { presSubjects: Array.isArray(presSubjects) ? presSubjects : presCourseSubjects({ formations, subjects }, settings) } : {}), color, freq, moments, moment: null, format,
       distance: format === 'visio' ? null : distance, note: note.trim().slice(0, 200), slots: normalizeSlots(slots),
@@ -74,12 +78,15 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
       if (isNew) {
         const id = await createParticipant({ ...data, ...(await pinData(pin, true)), viaCode: viaCode || null, createdByAdmin: !!admin });
         await log('participant_create', actor, `${P} ${N}`, { créneaux: data.slots.length, code: viaCode || null });
+        if (email.trim()) await saveEmail(id, email, actor);
+        else if (!admin) await updateParticipant(id, { emailAsked: true });
         onSaved(id);
       } else {
         const changes = diffParticipant(existing, data);
         await updateParticipant(existing.id, { ...data, ...(pin ? await pinData(pin) : {}) });
         if (pin && (hasPin || String(pin) !== String(existing.pin))) changes.push({ field: 'Code perso', from: '••••', to: '•••• (modifié)' });
         if (changes.length) await log('participant_update', actor, `${P} ${N}`, { changes });
+        if (email.trim() || (dropMail && hadMail)) await saveEmail(existing.id, dropMail ? '' : email, actor);
         onSaved(existing.id);
       }
     } catch (e) { setErr('Erreur : ' + e.message); }
@@ -205,6 +212,12 @@ export default function DispoForm({ existing, people, onClose, onSaved, onIsMe, 
         <label className="field"><span>Une remarque ? (matières, contraintes…)</span>
           <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Ex : surtout anatomie, pas dispo pendant les partiels" />
         </label>
+        <div className="field"><span>📧 Mail pour les rappels <small className="muted">(facultatif)</small></span>
+          {hadMail && !dropMail && <small className="ok-txt">✅ Adresse enregistrée (masquée, personne ne peut la lire sur le site). Tape une nouvelle adresse pour la remplacer. <button type="button" className="link tiny" onClick={() => { setDropMail(true); setEmail(''); }}>Ne plus recevoir de mails</button></small>}
+          {dropMail && <small className="muted">Ton adresse sera effacée à l’enregistrement. <button type="button" className="link tiny" onClick={() => setDropMail(false)}>Annuler</button></small>}
+          {!dropMail && <input type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={hadMail ? 'nouvelle adresse (facultatif)' : 'prenom.nom@exemple.fr'} />}
+          <small className="muted">Confirmation de séance, rappel la veille, place libérée en liste d’attente. Sans adresse : redouble de vigilance sur le site et WhatsApp.</small>
+        </div>
       </section>
 
       {/* ---------- Dispos ---------- */}

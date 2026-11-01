@@ -70,3 +70,21 @@ Volontairement minimale (site partagé entre nous) : les règles Firestore sont 
 npm install
 npm run dev
 ```
+
+## Mails automatiques (rappels)
+
+Envoyés par deux fonctions Netlify (dossier `netlify/functions`) depuis une adresse Gmail :
+- `mail-event` : appelée par le site quand un sondage devient une séance (confirmation aux « Oui », liste d'attente, « Peut-être ») et quand une place se libère (toute la liste d'attente).
+- `mail-reminders` : tourne toutes les heures, envoie le rappel aux inscrits des séances qui commencent dans moins de 24 h.
+
+Réglages à faire une fois sur Netlify (Site configuration → Environment variables) :
+- `GMAIL_USER` : l'adresse Gmail d'envoi (idéalement une adresse dédiée au groupe)
+- `GMAIL_APP_PASSWORD` : un « mot de passe d'application » Google (compte Google → Sécurité → Validation en deux étapes activée → Mots de passe des applications)
+
+- `FIREBASE_SERVICE_ACCOUNT` : tout le contenu du fichier JSON obtenu dans Firebase → Paramètres du projet → Comptes de service → « Générer une nouvelle clé privée »
+
+- `ADMIN_MAIL_CODE` : un code secret que tu choisis (différent du PIN admin), pour afficher les adresses dans l'admin (Participants → « Afficher »)
+
+Et publier les nouvelles règles `firestore.rules` dans Firebase (Firestore → Règles) : les adresses mail (collection `private_emails`) ne sont plus lisibles depuis le site, seulement par la fonction d'envoi.
+
+Puis redéployer. Chaque sondage / séance a une case « 📧 Mails automatiques » (cochée par défaut).

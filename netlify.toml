@@ -4,6 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  # L'adresse d'envoi des mails est volontairement affichée sur le site : ce n'est pas un secret
+  SECRETS_SCAN_OMIT_KEYS = "GMAIL_USER"
 
 [[redirects]]
   from = "/*"

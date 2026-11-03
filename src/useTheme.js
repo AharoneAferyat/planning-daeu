@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ls } from './utils';
+import { isNight } from './sun';
 
 const MODES = ['auto', 'clair', 'sombre'];
 
@@ -7,8 +8,8 @@ export default function useTheme() {
   const [mode, setMode] = useState(() => ls.get('ge_theme') || 'auto');
   useEffect(() => {
     const apply = () => {
-      const h = new Date().getHours();
-      const dark = mode === 'sombre' || (mode === 'auto' && (h < 7 || h >= 20));
+      // Auto : sombre entre le coucher et le lever du soleil (calculés pour Paris, chaque jour)
+      const dark = mode === 'sombre' || (mode === 'auto' && isNight());
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     };
     apply();

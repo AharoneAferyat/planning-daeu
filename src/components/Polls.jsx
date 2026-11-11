@@ -8,7 +8,7 @@ import {
   answerMaybe, cancelPoll, mailEvent, cancelSession, setPollMode, closePoll, createPoll, createSession, deletePoll, deleteSession, joinSession, keepSession, reopenPoll, updatePoll, updateSession, votePoll,
 } from '../data';
 import { fmt, fmtDay, fmtDayShort, isPast, isoDate, parseIso, timeAgo, toHHMM, toMin, uid } from '../utils';
-import { Avatar, AvatarStack, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
+import { Avatar, AvatarStack, CharCount, ConfirmButton, Empty, Modal, PeopleGroups, PeopleModal } from './ui';
 import { isHybrid, isMaybe, isOpenPoll, maybesOf, placesLabel, pollModeOf, sessionState, splitPlaces, yesByMode, yesOrder } from '../places';
 import { hiddenId } from '../testmode';
 import SessionInfoBlock, { hasInfo as hasAnyInfo, InfoFields, infoData, markInfoSeen } from './SessionInfo';
@@ -613,7 +613,7 @@ export function SessionSheet({ s, people, me, isAdmin, onEdit, onClose, polls = 
         <p><CalendarCheck size={16} /> <b>{fmtDay(s.date)}</b> · {fmt(s.s)} – {fmt(s.e)}</p>
         <p><Users size={16} /> {SESSION_FORMATS[s.format] || s.format}</p>
         {s.place && <p><MapPin size={16} /> {/^https?:\/\//.test(s.place) ? <a href={s.place} target="_blank" rel="noreferrer">{s.place}</a> : s.place}</p>}
-        {s.note && <p className="muted">{s.note}</p>}
+        {s.note && <p className="muted pre-line">{s.note}</p>}
         {spot && (
           <p className="sess-spot"><MapPin size={16} /> <span><b>{spot.name}</b>{spot.address && <> · <a href={mapsLink(spot)} target="_blank" rel="noreferrer">plan</a></>}{conditionsOf(spot).length > 0 && <span className="spot-tags">{conditionsOf(spot).map((c) => <span key={c} className="spot-cond">{c}</span>)}</span>}{(() => { const st = spotStatus(spot, s.date, s.s, s.e, null); return st.key !== 'open' && st.key !== 'unknown' ? <span className="pill warn">⚠️ {st.label}</span> : null; })()}</span></p>
         )}
@@ -824,7 +824,7 @@ export function SessionForm({ initial, prefill, people, me, onClose, settings, d
       </div>
       <SpotPickField me={me} settings={settings} slots={[{ date, s, e: e0 === 0 || e0 === 1439 ? 1440 : e0 }]} value={spotId} onPick={(sp) => { setSpotId(sp?.id || null); if (sp) { if (isEdit) setPlace(sp.name); else setInfo((x) => ({ ...x, ...spotInfo(sp), note: [x.note, spotInfo(sp).note].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join('\n') })); } }} />
       {!isEdit && <InfoFields format={format} value={info} onChange={setInfo} />}
-      <label className="field"><span>Note</span><input value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={200} /></label>
+      <label className="field"><span>Note</span><textarea rows={3} value={note} onChange={(ev) => setNote(ev.target.value)} maxLength={800} /><CharCount v={note} max={800} /></label>
       {(conf.length > 0 || hol) && <p className="oe-warn"><ConflictPills conf={conf} hol={hol} /></p>}
       <PlacesFields max={max} setMax={setMax} min={min} setMin={setMin} maxLocked={maxLocked} />
       <MailCheck value={mailReminders} onChange={setMailReminders} />

@@ -89,7 +89,7 @@ export function reminderMessage(s, { withInfo = false } = {}) {
   ];
   if (withInfo && s.info?.place) lines.push(`📍 ${s.info.place}`);
   if (withInfo && s.info?.visio) lines.push(`💻 ${s.info.visio}`);
-  if (withInfo && s.info?.note) lines.push(`📝 ${s.info.note.replace(/\n+/g, ' · ')}`);
+  if (withInfo && s.info?.note) { const n = s.info.note.replace(/\n+/g, ' · '); lines.push(`📝 ${n.length > 220 ? n.slice(0, 210).trim() + '… (suite sur le site)' : n}`); }
   lines.push(`👥 ${placesLabel(s)}`);
   if (s.announce?.text) lines.push(`📣 ${s.announce.text}`);
   if (s.lastChange?.at && Date.now() - s.lastChange.at < 7 * 86400000) lines.push('', '🔄 *Attention, modifié récemment :*', ...s.lastChange.list);

@@ -195,3 +195,22 @@ export function Toast({ text, onDone }) {
 export function Spinner({ label = 'Chargement…' }) {
   return <div className="center-screen"><div className="spinner" /><p className="muted">{label}</p></div>;
 }
+
+// Compteur de caractères : visible seulement à l'approche de la limite
+export function CharCount({ v, max }) {
+  const n = (v || '').length;
+  if (n < max * 0.75) return null;
+  return <small className={'char-count' + (n >= max ? ' full' : '')}>{n}/{max}</small>;
+}
+
+// Texte long replié : quelques lignes + « Voir plus »
+export function ClampText({ text, lines = 4, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const long = (text || '').length > lines * 45 || (text || '').split('\n').length > lines;
+  return (
+    <>
+      <span className={'clamp-text ' + className + (long && !open ? ' clamped' : '')} style={{ WebkitLineClamp: long && !open ? lines : 'unset' }}>{text}</span>
+      {long && <button type="button" className="link tiny clamp-more" onClick={(e) => { e.stopPropagation(); setOpen(!open); }}>{open ? 'Voir moins' : 'Voir plus'}</button>}
+    </>
+  );
+}

@@ -279,7 +279,7 @@ export async function closePoll(poll, option, extra, actor) {
 export async function addPollComment(poll, me, text, optId = null, replyTo = null) {
   const c = {
     id: Math.random().toString(36).slice(2, 10), by: me.id, byName: `${me.prenom} ${me.nom || ''}`.trim(),
-    text: text.trim().slice(0, 300), optId: optId || null, at: Date.now(),
+    text: text.trim().slice(0, 800), optId: optId || null, at: Date.now(),
     ...(replyTo ? { replyTo: replyTo.id, replyToName: replyTo.byName } : {}),
   };
   await updateDoc(doc(db, 'polls', poll.id), { comments: arrayUnion(c) });

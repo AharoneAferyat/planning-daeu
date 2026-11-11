@@ -4,6 +4,7 @@ import { mailEvent, saveSessionInfo } from '../data';
 import { mailCount } from '../changes';
 import { ChangedDone } from './WaButton';
 import { changeMessage, shareWhatsApp } from '../share';
+import { CharCount, ClampText } from './ui';
 
 export const hasInfo = (s) => !!(s?.info && (s.info.place || s.info.visio || s.info.note));
 const needsPlace = (format) => format !== 'visio';      // présentiel ou hybride
@@ -18,7 +19,7 @@ export function InfoLines({ info, compact }) {
     <div className={'info-lines' + (compact ? ' compact' : '')}>
       {info.place && <p><MapPin size={15} /> <span><b>Lieu :</b> <Link v={info.place} /></span></p>}
       {info.visio && <p><MonitorSmartphone size={15} /> <span><b>À distance :</b> <Link v={info.visio} /></span></p>}
-      {info.note && <p><Info size={15} /> <span>{info.note}</span></p>}
+      {info.note && <p><Info size={15} /> <span>{compact ? <ClampText text={info.note} lines={3} /> : <span className="pre-line">{info.note}</span>}</span></p>}
     </div>
   );
 }
@@ -49,7 +50,8 @@ export default function SessionInfoBlock({ s, people, canManage, isAttendee, act
           </label>
         )}
         <label className="field"><span>Consignes (facultatif)</span>
-          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex : apporter les annales 2024, code d'entrée 1234…" maxLength={400} />
+          <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex : apporter les annales 2024, code d'entrée 1234…" maxLength={800} />
+          <CharCount v={note} max={800} />
         </label>
         <div className="row-btns">
           <button className="btn ghost" onClick={() => setEdit(false)}>Annuler</button>
@@ -101,7 +103,8 @@ export function InfoFields({ format = 'hybride', value, onChange, required }) {
         </label>
       )}
       <label className="field"><span>Consignes</span>
-        <textarea rows={2} value={value.note || ''} onChange={set('note')} placeholder="Ex : apporter les annales 2024, code d'entrée…" maxLength={400} />
+        <textarea rows={2} value={value.note || ''} onChange={set('note')} placeholder="Ex : apporter les annales 2024, code d'entrée…" maxLength={800} />
+        <CharCount v={value.note} max={800} />
       </label>
     </div>
   );

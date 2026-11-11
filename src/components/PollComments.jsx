@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, CornerDownRight, MessageSquare, Reply, Send, Trash2, X } from 'lucide-react';
 import { addPollComment, deletePollComment } from '../data';
 import { fmt, fmtDay, timeAgo } from '../utils';
-import { Avatar } from './ui';
+import { Avatar, CharCount, ClampText } from './ui';
 
 const QUICK = [
   'Je ne serai là qu’une partie du temps',
@@ -28,10 +28,12 @@ function Composer({ placeholder, onSend, autoFocus, onCancel, children }) {
     <div className="pcom-form">
       {children?.(send, busy)}
       <div className="pcom-input">
-        <input ref={ref} value={text} onChange={(e) => setText(e.target.value)} maxLength={300} placeholder={placeholder}
+        <input ref={ref} value={text} onChange={(e) => setText(e.target.value)} maxLength={800} placeholder={placeholder}
           onKeyDown={(e) => { if (e.key === 'Enter') send(); if (e.key === 'Escape') onCancel?.(); }} />
         {onCancel && <button className="btn ghost" onClick={onCancel} aria-label="Annuler" title="Annuler"><X size={16} /></button>}
         <button className="btn primary" disabled={busy || !text.trim()} onClick={() => send()} aria-label="Envoyer"><Send size={16} /></button>
+      </div>
+      <div className="pcom-count"><CharCount v={text} max={800} />
       </div>
     </div>
   );
@@ -73,7 +75,7 @@ export default function PollComments({ poll, me, people, canModerate, optId: fix
         <div className="grow">
           <div className="pcom-meta"><b>{c.byName}</b>{o && !fixedOpt && !isReply && <span className="pcom-opt">{optLabel(o)}</span>}<span className="muted">{timeAgo(c.at)}</span></div>
           {(isReply || orphan) && c.replyToName && <span className="pcom-to"><CornerDownRight size={11} /> à {c.replyToName}{orphan ? ' (message supprimé)' : ''}</span>}
-          <p>{c.text}</p>
+          <p><ClampText text={c.text} lines={4} /></p>
           {canWrite && <button className="pcom-rep" onClick={() => setReplyTo({ root, target: c })}><Reply size={13} /> Répondre</button>}
         </div>
         {(mine || canModerate) && (
